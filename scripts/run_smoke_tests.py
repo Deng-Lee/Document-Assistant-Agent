@@ -292,29 +292,31 @@ def main() -> None:
         api_root = root / "api_app"
         api_app = create_app(api_root)
         api_routes = {getattr(route, "path", None): route.endpoint for route in api_app.routes if hasattr(route, "path")}
-        health_payload = api_routes["/api/health"]()
+        health_payload = _to_dict(api_routes["/api/health"]())
         assert health_payload["status"] == "ok"
 
-        api_ingest = api_routes["/api/ingest/text"](
-            IngestTextRequest(markdown_text=notes_markdown, source_path_hint="api_notes.md")
+        api_ingest = _to_dict(
+            api_routes["/api/ingest/text"](
+                IngestTextRequest(markdown_text=notes_markdown, source_path_hint="api_notes.md")
+            )
         )
         assert api_ingest["doc_id"]
         assert api_ingest["chunk_ids"]
         assert api_ingest["jobs"]
 
-        api_retrieve = api_routes["/api/retrieve"](RetrieveRequest(query_text="maze mirror", mode="full"))
+        api_retrieve = _to_dict(api_routes["/api/retrieve"](RetrieveRequest(query_text="maze mirror", mode="full")))
         assert api_retrieve["evidence_pack"]["items"]
 
-        api_chat = api_routes["/api/chat/turn"](ChatTurnRequest(user_message="迷宫和镜子有什么联系？"))
+        api_chat = _to_dict(api_routes["/api/chat/turn"](ChatTurnRequest(user_message="迷宫和镜子有什么联系？")))
         assert api_chat["response_type"] == "final_answer"
         assert api_chat["conversation_id"]
 
-        api_jobs = api_routes["/api/jobs"]()
+        api_jobs = _to_dict(api_routes["/api/jobs"]())
         assert api_jobs["jobs"]
-        api_run_job = api_routes["/api/jobs/run-next"](RunJobsRequest(job_types=["safe_summary_build"]))
+        api_run_job = _to_dict(api_routes["/api/jobs/run-next"](RunJobsRequest(job_types=["safe_summary_build"])))
         assert api_run_job["result"]["job"]["status"] == "succeeded"
 
-        api_traces = api_routes["/api/traces"]()
+        api_traces = _to_dict(api_routes["/api/traces"]())
         assert api_traces["traces"]
         print("api_smoke_ok")
 

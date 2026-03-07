@@ -85,6 +85,14 @@ def create_test_app(root_dir: str | Path):
     return create_app(root_dir)
 
 
+def dump_result(value):
+    if hasattr(value, "model_dump"):
+        return value.model_dump(by_alias=True)
+    if hasattr(value, "dict"):
+        return value.dict(by_alias=True)
+    return value
+
+
 def build_ingested_stack(root: str | Path, include_bjj: bool = True, include_notes: bool = True):
     activate_test_profile("fake")
     from server.app.ingestion import IngestionService

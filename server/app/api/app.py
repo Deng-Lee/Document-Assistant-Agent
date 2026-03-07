@@ -39,6 +39,16 @@ from .models import (
     RetrieveRequest,
     RunJobsRequest,
 )
+from .responses import (
+    ChatConversationResponse,
+    HealthResponse,
+    IngestTextResponse,
+    JobsListResponse,
+    RecordBJJResponse,
+    RecordNotesResponse,
+    RetrieveResponse,
+    RunJobResponse,
+)
 from .state import AppState, create_app_state
 
 
@@ -47,12 +57,12 @@ def create_app(root_dir: str | Path | None = None) -> FastAPI:
     app = FastAPI(title="Personal Document Assistant API", version="0.1.0")
     app.state.pda = create_app_state(resolved_root)
 
-    @app.get("/api/health")
-    def health() -> dict:
-        return {"status": "ok"}
+    @app.get("/api/health", response_model=HealthResponse)
+    def health() -> HealthResponse:
+        return HealthResponse(status="ok")
 
-    @app.post("/api/ingest/text")
-    def ingest_text(request: IngestTextRequest) -> dict:
+    @app.post("/api/ingest/text", response_model=IngestTextResponse)
+    def ingest_text(request: IngestTextRequest) -> IngestTextResponse:
         state = _state(app)
         result = state.ingestion_service.ingest_text(
             raw_text=request.markdown_text,
@@ -60,15 +70,15 @@ def create_app(root_dir: str | Path | None = None) -> FastAPI:
             doc_id=request.doc_id,
         )
         stored_jobs = _store_jobs(state, result.jobs)
-        return {
-            "doc_id": result.document.doc_id,
-            "doc_version_id": result.doc_version.doc_version_id,
-            "chunk_ids": [chunk.chunk_id for chunk in result.chunks],
-            "jobs": [_dump(job) for job in stored_jobs],
-        }
+        return IngestTextResponse(
+            doc_id=result.document.doc_id,
+            doc_version_id=result.doc_version.doc_version_id,
+            chunk_ids=[chunk.chunk_id for chunk in result.chunks],
+            jobs=stored_jobs,
+        )
 
-    @app.post("/api/record/bjj")
-    def record_bjj(request: BJJRecordRequest) -> dict:
+    @app.post("/api/record/bjj", response_model=RecordBJJResponse)
+    def record_bjj(request: BJJRecordRequest) -> RecordBJJResponse:
         state = _state(app)
         result = state.ingestion_service.ingest_text(
             raw_text=request.bjj_markdown,
@@ -76,15 +86,15 @@ def create_app(root_dir: str | Path | None = None) -> FastAPI:
             doc_id=request.doc_id,
         )
         stored_jobs = _store_jobs(state, result.jobs)
-        return {
-            "doc_id": result.document.doc_id,
-            "doc_version_id": result.doc_version.doc_version_id,
-            "chunk_id": result.chunks[0].chunk_id if result.chunks else None,
-            "jobs": [_dump(job) for job in stored_jobs],
-        }
+        return RecordBJJResponse(
+            doc_id=result.document.doc_id,
+            doc_version_id=result.doc_version.doc_version_id,
+            chunk_id=result.chunks[0].chunk_id if result.chunks else None,
+            jobs=stored_jobs,
+        )
 
-    @app.post("/api/record/notes")
-    def record_notes(request: NotesRecordRequest) -> dict:
+    @app.post("/api/record/notes", response_model=RecordNotesResponse)
+    def record_notes(request: NotesRecordRequest) -> RecordNotesResponse:
         state = _state(app)
         markdown = f"---\ntype: notes\ntitle: Quick Note\n---\n\n{request.notes_text}\n"
         result = state.ingestion_service.ingest_text(
@@ -93,15 +103,15 @@ def create_app(root_dir: str | Path | None = None) -> FastAPI:
             doc_id=request.doc_id,
         )
         stored_jobs = _store_jobs(state, result.jobs)
-        return {
-            "doc_id": result.document.doc_id,
-            "doc_version_id": result.doc_version.doc_version_id,
-            "chunk_ids": [chunk.chunk_id for chunk in result.chunks],
-            "jobs": [_dump(job) for job in stored_jobs],
-        }
+        return RecordNotesResponse(
+            doc_id=result.document.doc_id,
+            doc_version_id=result.doc_version.doc_version_id,
+            chunk_ids=[chunk.chunk_id for chunk in result.chunks],
+            jobs=stored_jobs,
+        )
 
-    @app.post("/api/retrieve")
-    def retrieve(request: RetrieveRequest) -> dict:
+    @app.post("/api/retrieve", response_model=RetrieveResponse)
+    def retrieve(request: RetrieveRequest) -> RetrieveResponse:
         state = _state(app)
         outcome = state.retrieval_service.retrieve(
             query_text=request.query_text,
@@ -109,12 +119,12 @@ def create_app(root_dir: str | Path | None = None) -> FastAPI:
             mode=request.mode,
             top_k=request.k,
         )
-        return {
-            "trace_id": request.trace_id,
-            "probe_stats": _dump(outcome.probe_stats) if outcome.probe_stats else None,
-            "retrieval_log": _dump(outcome.retrieval_log),
-            "evidence_pack": _dump(outcome),
-        }
+        return RetrieveResponse(
+            trace_id=request.trace_id,
+            probe_stats=outcome.probe_stats,
+            retrieval_log=outcome.retrieval_log,
+            evidence_pack=outcome,
+        )
 
     @app.post("/api/chat/turn")
     def chat_turn(request: ChatTurnRequest):
@@ -280,16 +290,13 @@ def create_app(root_dir: str | Path | None = None) -> FastAPI:
             conversation.state.coach_clarify_round = 0
             return _dump(response)
 
-    @app.get("/api/chat/{conversation_id}")
-    def get_conversation(conversation_id: str) -> dict:
+    @app.get("/api/chat/{conversation_id}", response_model=ChatConversationResponse)
+    def get_conversation(conversation_id: str) -> ChatConversationResponse:
         state = _state(app)
         conversation = state.conversations.get(conversation_id)
         if conversation is None:
             raise HTTPException(status_code=404, detail="conversation not found")
-        return {
-            "turns": conversation.turns,
-            "last_state": _dump(conversation.state),
-        }
+        return ChatConversationResponse(turns=conversation.turns, last_state=conversation.state)
 
     @app.get("/api/traces")
     def list_traces() -> dict:
@@ -314,16 +321,16 @@ def create_app(root_dir: str | Path | None = None) -> FastAPI:
             )
         return {"traces": traces}
 
-    @app.get("/api/jobs")
-    def list_jobs() -> dict:
+    @app.get("/api/jobs", response_model=JobsListResponse)
+    def list_jobs() -> JobsListResponse:
         state = _state(app)
-        return {"jobs": [_dump(job) for job in state.job_service.list_jobs()]}
+        return JobsListResponse(jobs=state.job_service.list_jobs())
 
-    @app.post("/api/jobs/run-next")
-    def run_next_job(request: RunJobsRequest) -> dict:
+    @app.post("/api/jobs/run-next", response_model=RunJobResponse)
+    def run_next_job(request: RunJobsRequest) -> RunJobResponse:
         state = _state(app)
         result = state.job_service.run_next(job_types=request.job_types or None)
-        return {"result": _dump(result)}
+        return RunJobResponse(result=_dump(result))
 
     @app.get("/api/traces/{trace_id}")
     def get_trace(trace_id: str) -> dict:
