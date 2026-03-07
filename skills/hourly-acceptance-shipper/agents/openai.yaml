@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hourly Acceptance Shipper"
+  short_description: "Ship work in 1-hour verified increments"
+  default_prompt: "Use $hourly-acceptance-shipper to implement and ship this repo in 1-hour verified increments."
