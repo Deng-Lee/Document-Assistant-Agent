@@ -77,3 +77,45 @@ class APITests(unittest.TestCase):
             self.assertEqual(response["response"]["template_id"], "REDIRECT_RECORD_V1")
             traces = dump_result(routes["/api/traces"]())
             self.assertGreaterEqual(len(traces["traces"]), 1)
+
+    def test_management_endpoints_return_typed_payloads(self) -> None:
+        with TemporaryDirectory() as tmp:
+            app = create_test_app(tmp)
+            routes = endpoint_map(app)
+
+            from server.app.api.models import ChatTurnRequest, EvalRunAPIRequest, IngestTextRequest, ProfilePatchRequest, ReplayRequest
+            from server.app.core import SFTExportRequest
+
+            routes["/api/ingest/text"](
+                IngestTextRequest(markdown_text=sample_bjj_markdown(), source_path_hint="bjj.md")
+            )
+            chat_response = dump_result(routes["/api/chat/turn"](ChatTurnRequest(user_message="龟防怎么破解？我总是被人拉回去。")))
+            trace_id = chat_response["trace_id"]
+
+            traces_payload = dump_result(routes["/api/traces"]())
+            self.assertGreaterEqual(len(traces_payload["traces"]), 1)
+            self.assertIn(trace_id, {item["trace_id"] for item in traces_payload["traces"]})
+
+            trace_payload = dump_result(routes["/api/traces/{trace_id}"](trace_id))
+            self.assertEqual(trace_payload["trace_id"], trace_id)
+
+            replay_payload = dump_result(routes["/api/replay/{trace_id}"](trace_id, ReplayRequest()))
+            self.assertTrue(replay_payload["trace_id"])
+            self.assertTrue(replay_payload["final_answer"])
+
+            eval_payload = dump_result(routes["/api/eval/run"](EvalRunAPIRequest(eval_set_id="api_eval", trace_ids=[trace_id])))
+            self.assertTrue(eval_payload["eval_run_id"])
+
+            eval_results = dump_result(routes["/api/eval/results"]())
+            self.assertGreaterEqual(len(eval_results["runs"]), 1)
+
+            sft_payload = dump_result(routes["/api/sft/export"](SFTExportRequest(trace_filter={})))
+            self.assertTrue(sft_payload["export_path"])
+            self.assertGreaterEqual(sft_payload["manifest"]["sample_count"], 1)
+
+            profile_before = dump_result(routes["GET /api/profile"]())
+            self.assertTrue(profile_before["profile_version_id"])
+            profile_after = dump_result(
+                routes["PUT /api/profile"](ProfilePatchRequest(ruleset_default="NoGi"))
+            )
+            self.assertEqual(profile_after["ruleset_default"], "NoGi")

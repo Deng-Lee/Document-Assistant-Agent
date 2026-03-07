@@ -25,6 +25,7 @@ from server.app.core import (
     RetrievalLog,
     SFTExportRequest,
     TraceEvent,
+    TraceRecord,
 )
 from server.app.observability import TraceRecorder
 
@@ -41,13 +42,20 @@ from .models import (
 )
 from .responses import (
     ChatConversationResponse,
+    EvalResultsResponse,
+    EvalRunLaunchResponse,
     HealthResponse,
     IngestTextResponse,
     JobsListResponse,
+    ProfileResponse,
     RecordBJJResponse,
     RecordNotesResponse,
+    ReplayTraceResponse,
     RetrieveResponse,
     RunJobResponse,
+    SFTExportResponse,
+    TraceSummaryItem,
+    TracesListResponse,
 )
 from .state import AppState, create_app_state
 
@@ -170,7 +178,8 @@ def create_app(root_dir: str | Path | None = None) -> FastAPI:
                         output=_dump(clarify),
                     )
                 )
-                trace_id = recorder.persist(state.trace_store)
+                recorder.persist(state.trace_store)
+                trace_id = recorder.trace_id
                 response = ChatClarifyTurnResponse(
                     trace_id=trace_id,
                     conversation_id=conversation.conversation_id,
@@ -202,7 +211,8 @@ def create_app(root_dir: str | Path | None = None) -> FastAPI:
                         output=_dump(clarify),
                     )
                 )
-                trace_id = recorder.persist(state.trace_store)
+                recorder.persist(state.trace_store)
+                trace_id = recorder.trace_id
                 response = ChatClarifyTurnResponse(
                     trace_id=trace_id,
                     conversation_id=conversation.conversation_id,
@@ -251,7 +261,8 @@ def create_app(root_dir: str | Path | None = None) -> FastAPI:
                             output=_dump(coach_outcome.clarify_request),
                         )
                     )
-                    trace_id = recorder.persist(state.trace_store)
+                    recorder.persist(state.trace_store)
+                    trace_id = recorder.trace_id
                     response = ChatClarifyTurnResponse(
                         trace_id=trace_id,
                         conversation_id=conversation.conversation_id,
@@ -278,7 +289,8 @@ def create_app(root_dir: str | Path | None = None) -> FastAPI:
                     validator_report=validator_report,
                 )
             )
-            trace_id = recorder.persist(state.trace_store)
+            recorder.persist(state.trace_store)
+            trace_id = recorder.trace_id
             response = ChatFinalTurnResponse(
                 trace_id=trace_id,
                 conversation_id=conversation.conversation_id,
@@ -298,28 +310,28 @@ def create_app(root_dir: str | Path | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="conversation not found")
         return ChatConversationResponse(turns=conversation.turns, last_state=conversation.state)
 
-    @app.get("/api/traces")
-    def list_traces() -> dict:
+    @app.get("/api/traces", response_model=TracesListResponse)
+    def list_traces() -> TracesListResponse:
         state = _state(app)
         traces = []
         for trace_id in state.trace_store.list_trace_ids():
             trace = state.trace_store.read_trace(trace_id)
             output = trace.generation_log.output or {}
             traces.append(
-                {
-                    "trace_id": trace.trace_id,
-                    "created_at": trace.spans[0].started_at.isoformat() if trace.spans else None,
-                    "domain": trace.request_log.domain,
-                    "task": trace.request_log.task,
-                    "gate_label": output.get("reasoning_status", {}).get("gate_label") if isinstance(output, dict) else None,
-                    "latency": trace.generation_log.latency_ms,
-                    "cost": trace.generation_log.cost_estimate,
-                    "validator_pass": trace.generation_log.validator_report.validator_pass
+                TraceSummaryItem(
+                    trace_id=trace.trace_id,
+                    created_at=trace.spans[0].started_at.isoformat() if trace.spans else None,
+                    domain=trace.request_log.domain,
+                    task=trace.request_log.task,
+                    gate_label=output.get("reasoning_status", {}).get("gate_label") if isinstance(output, dict) else None,
+                    latency=trace.generation_log.latency_ms,
+                    cost=trace.generation_log.cost_estimate,
+                    validator_pass=trace.generation_log.validator_report.validator_pass
                     if trace.generation_log.validator_report
                     else None,
-                }
+                )
             )
-        return {"traces": traces}
+        return TracesListResponse(traces=traces)
 
     @app.get("/api/jobs", response_model=JobsListResponse)
     def list_jobs() -> JobsListResponse:
@@ -332,14 +344,13 @@ def create_app(root_dir: str | Path | None = None) -> FastAPI:
         result = state.job_service.run_next(job_types=request.job_types or None)
         return RunJobResponse(result=_dump(result))
 
-    @app.get("/api/traces/{trace_id}")
-    def get_trace(trace_id: str) -> dict:
+    @app.get("/api/traces/{trace_id}", response_model=TraceRecord)
+    def get_trace(trace_id: str) -> TraceRecord:
         state = _state(app)
-        trace = state.trace_store.read_trace(trace_id)
-        return _dump(trace)
+        return state.trace_store.read_trace(trace_id)
 
-    @app.post("/api/replay/{trace_id}")
-    def replay_trace(trace_id: str, request: ReplayRequest) -> dict:
+    @app.post("/api/replay/{trace_id}", response_model=ReplayTraceResponse)
+    def replay_trace(trace_id: str, request: ReplayRequest) -> ReplayTraceResponse:
         state = _state(app)
         trace = state.trace_store.read_trace(trace_id)
         variant = ModelVariant(request.model_variant)
@@ -381,14 +392,12 @@ def create_app(root_dir: str | Path | None = None) -> FastAPI:
                 validator_report=validator_report,
             )
         )
-        new_trace_id = recorder.persist(state.trace_store)
-        return {
-            "trace_id": new_trace_id,
-            "final_answer": _dump(final_answer),
-        }
+        recorder.persist(state.trace_store)
+        new_trace_id = recorder.trace_id
+        return ReplayTraceResponse(trace_id=new_trace_id, final_answer=final_answer)
 
-    @app.post("/api/eval/run")
-    def run_eval(request: EvalRunAPIRequest) -> dict:
+    @app.post("/api/eval/run", response_model=EvalRunLaunchResponse)
+    def run_eval(request: EvalRunAPIRequest) -> EvalRunLaunchResponse:
         state = _state(app)
         result = state.evaluation_service.run(
             EvalRunRequest(
@@ -398,30 +407,27 @@ def create_app(root_dir: str | Path | None = None) -> FastAPI:
             ),
             trace_ids=request.trace_ids or None,
         )
-        return {"eval_run_id": result.eval_run_id}
+        return EvalRunLaunchResponse(eval_run_id=result.eval_run_id)
 
-    @app.get("/api/eval/results")
-    def get_eval_results() -> dict:
+    @app.get("/api/eval/results", response_model=EvalResultsResponse)
+    def get_eval_results() -> EvalResultsResponse:
         state = _state(app)
-        return {"runs": [_dump(result) for result in state.evaluation_service.list_results()]}
+        return EvalResultsResponse(runs=state.evaluation_service.list_results())
 
-    @app.post("/api/sft/export")
-    def export_sft(request: SFTExportRequest) -> dict:
+    @app.post("/api/sft/export", response_model=SFTExportResponse)
+    def export_sft(request: SFTExportRequest) -> SFTExportResponse:
         state = _state(app)
         export_dir = state.root_dir / "datasets" / "sft" / "v1" / datetime.utcnow().strftime("%Y%m%d")
         manifest, _samples = state.sft_service.export_dataset(request=request, output_dir=export_dir)
-        return {
-            "export_path": str(export_dir),
-            "manifest": _dump(manifest),
-        }
+        return SFTExportResponse(export_path=str(export_dir), manifest=manifest)
 
-    @app.get("/api/profile")
-    def get_profile() -> dict:
+    @app.get("/api/profile", response_model=ProfileResponse)
+    def get_profile() -> ProfileResponse:
         state = _state(app)
-        return _dump(state.current_profile)
+        return ProfileResponse(**_dump(state.current_profile))
 
-    @app.put("/api/profile")
-    def put_profile(request: ProfilePatchRequest) -> dict:
+    @app.put("/api/profile", response_model=ProfileResponse)
+    def put_profile(request: ProfilePatchRequest) -> ProfileResponse:
         state = _state(app)
         state.current_profile = ProfileSummary(
             profile_version_id=f"profile_{uuid4().hex[:12]}",
@@ -430,7 +436,7 @@ def create_app(root_dir: str | Path | None = None) -> FastAPI:
             forbidden_actions=[ProfileConstraint(**item) for item in request.forbidden_actions],
             preferences=[ProfileConstraint(**item) for item in request.preferences],
         )
-        return _dump(state.current_profile)
+        return ProfileResponse(**_dump(state.current_profile))
 
     return app
 

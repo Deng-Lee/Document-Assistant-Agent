@@ -13,7 +13,17 @@ def activate_test_profile(profile_name: str = "fake") -> None:
 
 
 def endpoint_map(app) -> dict[str, object]:
-    return {getattr(route, "path", None): route.endpoint for route in app.routes if hasattr(route, "path")}
+    mapping: dict[str, object] = {}
+    for route in app.routes:
+        if not hasattr(route, "path"):
+            continue
+        path = getattr(route, "path", None)
+        if path and path not in mapping:
+            mapping[path] = route.endpoint
+        for method in sorted(getattr(route, "methods", set()) or set()):
+            if path:
+                mapping[f"{method} {path}"] = route.endpoint
+    return mapping
 
 
 def sample_bjj_markdown() -> str:

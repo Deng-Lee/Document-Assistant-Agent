@@ -55,7 +55,14 @@ def main() -> None:
     from server.app.agents import BJJCoachService, LiteraryService
     from server.app.agents.bjj_coach.types import BJJCoachInput
     from server.app.api import create_app
-    from server.app.api.models import ChatTurnRequest, IngestTextRequest, RetrieveRequest, RunJobsRequest
+    from server.app.api.models import (
+        ChatTurnRequest,
+        EvalRunAPIRequest,
+        IngestTextRequest,
+        ReplayRequest,
+        RetrieveRequest,
+        RunJobsRequest,
+    )
     from server.app.evaluation import EvaluationService
     from server.app.ingestion import IngestionService
     from server.app.jobs import JobService
@@ -291,7 +298,16 @@ def main() -> None:
 
         api_root = root / "api_app"
         api_app = create_app(api_root)
-        api_routes = {getattr(route, "path", None): route.endpoint for route in api_app.routes if hasattr(route, "path")}
+        api_routes = {}
+        for route in api_app.routes:
+            if not hasattr(route, "path"):
+                continue
+            path = getattr(route, "path", None)
+            if path and path not in api_routes:
+                api_routes[path] = route.endpoint
+            for method in sorted(getattr(route, "methods", set()) or set()):
+                if path:
+                    api_routes[f"{method} {path}"] = route.endpoint
         health_payload = _to_dict(api_routes["/api/health"]())
         assert health_payload["status"] == "ok"
 
@@ -318,6 +334,18 @@ def main() -> None:
 
         api_traces = _to_dict(api_routes["/api/traces"]())
         assert api_traces["traces"]
+        api_trace = _to_dict(api_routes["/api/traces/{trace_id}"](api_chat["trace_id"]))
+        assert api_trace["trace_id"] == api_chat["trace_id"]
+        api_replay = _to_dict(api_routes["/api/replay/{trace_id}"](api_chat["trace_id"], ReplayRequest()))
+        assert api_replay["trace_id"]
+        api_eval = _to_dict(api_routes["/api/eval/run"](EvalRunAPIRequest(eval_set_id="api_smoke_eval", trace_ids=[api_chat["trace_id"]])))
+        assert api_eval["eval_run_id"]
+        api_eval_results = _to_dict(api_routes["/api/eval/results"]())
+        assert api_eval_results["runs"]
+        api_sft = _to_dict(api_routes["/api/sft/export"](SFTExportRequest(trace_filter={})))
+        assert api_sft["manifest"]["sample_count"] >= 1
+        api_profile = _to_dict(api_routes["GET /api/profile"]())
+        assert api_profile["profile_version_id"]
         print("api_smoke_ok")
 
         trace_store2 = JSONTraceStore(root / "traces_observability")

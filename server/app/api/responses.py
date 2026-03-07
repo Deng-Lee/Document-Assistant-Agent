@@ -4,7 +4,20 @@ from typing import Any
 
 from pydantic import Field
 
-from server.app.core import EvidencePack, JobRecord, PDABaseModel, ProbeStats, RetrievalLog
+from server.app.core import (
+    BJJAnswerType,
+    EvalRunResult,
+    JobRecord,
+    JobRunResult,
+    LiteraryFinalAnswer,
+    PDABaseModel,
+    ProbeStats,
+    ProfileSummary,
+    RetrievalLog,
+    SFTDatasetManifest,
+    TraceRecord,
+)
+from server.app.core import EvidencePack
 from server.app.orchestrator import ConversationState
 
 
@@ -50,4 +63,41 @@ class JobsListResponse(PDABaseModel):
 
 
 class RunJobResponse(PDABaseModel):
-    result: dict[str, Any] | None = None
+    result: JobRunResult | None = None
+
+
+class TraceSummaryItem(PDABaseModel):
+    trace_id: str
+    created_at: str | None = None
+    domain: str | None = None
+    task: str | None = None
+    gate_label: str | None = None
+    latency: int | None = None
+    cost: float | None = None
+    validator_pass: bool | None = None
+
+
+class TracesListResponse(PDABaseModel):
+    traces: list[TraceSummaryItem] = Field(default_factory=list)
+
+
+class ReplayTraceResponse(PDABaseModel):
+    trace_id: str
+    final_answer: BJJAnswerType | LiteraryFinalAnswer
+
+
+class EvalRunLaunchResponse(PDABaseModel):
+    eval_run_id: str
+
+
+class EvalResultsResponse(PDABaseModel):
+    runs: list[EvalRunResult] = Field(default_factory=list)
+
+
+class SFTExportResponse(PDABaseModel):
+    export_path: str
+    manifest: SFTDatasetManifest
+
+
+class ProfileResponse(ProfileSummary):
+    pass
