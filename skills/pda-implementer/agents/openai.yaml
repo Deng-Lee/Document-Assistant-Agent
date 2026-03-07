@@ -1,0 +1,4 @@
+interface:
+  display_name: "pda implementer"
+  short_description: "Implement repo from DEV_SPEC + SFT"
+  default_prompt: "Read DEV_SPEC.md, generate a decision-complete IMPLEMENTATION_PLAN.md with human confirmation gates, then implement the system module-by-module with tracing, evaluation, replay, and Policy SFT."

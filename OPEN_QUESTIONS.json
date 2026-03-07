@@ -1,0 +1,272 @@
+[
+  {
+    "id": "q0001",
+    "kind": "spec_tbd",
+    "question": "> 待讨论：写入指令词表的最小集合（以及是否要做更强的误触发保护）。",
+    "impact": [
+      "spec"
+    ],
+    "recommended_default": "Proceed with documented recommended defaults; record as ASSUMPTION and tune via golden-set grid search.",
+    "requires_confirmation": false,
+    "source": {
+      "path": "/Users/lee/Documents/AI/Document Assistant Agent/DEV_SPEC.md",
+      "line": 749
+    },
+    "evidence": "> 待讨论：写入指令词表的最小集合（以及是否要做更强的误触发保护）。"
+  },
+  {
+    "id": "q0002",
+    "kind": "spec_tbd",
+    "question": "> V2 可选：引入文档域向量原型 proto_*（以及 temp、w_hist 等融合参数）。V1 默认只用直方图：domain_score = p_bjj（等价 w_hist=1）。",
+    "impact": [
+      "spec"
+    ],
+    "recommended_default": "Proceed with documented recommended defaults; record as ASSUMPTION and tune via golden-set grid search.",
+    "requires_confirmation": false,
+    "source": {
+      "path": "/Users/lee/Documents/AI/Document Assistant Agent/DEV_SPEC.md",
+      "line": 868
+    },
+    "evidence": "> V2 可选：引入文档域向量原型 proto_*（以及 temp、w_hist 等融合参数）。V1 默认只用直方图：domain_score = p_bjj（等价 w_hist=1）。"
+  },
+  {
+    "id": "q0003",
+    "kind": "spec_tbd",
+    "question": "> 待讨论：headness 的 proxy（RRF 无绝对分数时用 rank 差/命中重叠率）、a 的取值与阈值。",
+    "impact": [
+      "spec"
+    ],
+    "recommended_default": "Proceed with documented recommended defaults; record as ASSUMPTION and tune via golden-set grid search.",
+    "requires_confirmation": false,
+    "source": {
+      "path": "/Users/lee/Documents/AI/Document Assistant Agent/DEV_SPEC.md",
+      "line": 891
+    },
+    "evidence": "> 待讨论：headness 的 proxy（RRF 无绝对分数时用 rank 差/命中重叠率）、a 的取值与阈值。"
+  },
+  {
+    "id": "q0004",
+    "kind": "spec_tbd",
+    "question": "> 待讨论：时间解析覆盖范围（中文相对时间粒度、跨年处理）。",
+    "impact": [
+      "spec"
+    ],
+    "recommended_default": "Proceed with documented recommended defaults; record as ASSUMPTION and tune via golden-set grid search.",
+    "requires_confirmation": false,
+    "source": {
+      "path": "/Users/lee/Documents/AI/Document Assistant Agent/DEV_SPEC.md",
+      "line": 897
+    },
+    "evidence": "> 待讨论：时间解析覆盖范围（中文相对时间粒度、跨年处理）。"
+  },
+  {
+    "id": "q0005",
+    "kind": "spec_tbd",
+    "question": "> 待讨论：0.65/0.35 阈值；可从 golden set 网格搜索。",
+    "impact": [
+      "spec"
+    ],
+    "recommended_default": "Proceed with documented recommended defaults; record as ASSUMPTION and tune via golden-set grid search.",
+    "requires_confirmation": false,
+    "source": {
+      "path": "/Users/lee/Documents/AI/Document Assistant Agent/DEV_SPEC.md",
+      "line": 932
+    },
+    "evidence": "> 待讨论：0.65/0.35 阈值；可从 golden set 网格搜索。"
+  },
+  {
+    "id": "q0006",
+    "kind": "spec_tbd",
+    "question": "> 待讨论：slot_entropy 阈值（例如 >0.6）与“最发散槽位”的计算细节（用 H_norm 最大者）。",
+    "impact": [
+      "spec"
+    ],
+    "recommended_default": "Proceed with documented recommended defaults; record as ASSUMPTION and tune via golden-set grid search.",
+    "requires_confirmation": false,
+    "source": {
+      "path": "/Users/lee/Documents/AI/Document Assistant Agent/DEV_SPEC.md",
+      "line": 951
+    },
+    "evidence": "> 待讨论：slot_entropy 阈值（例如 >0.6）与“最发散槽位”的计算细节（用 H_norm 最大者）。"
+  },
+  {
+    "id": "q0007",
+    "kind": "spec_tbd",
+    "question": "> 待讨论：evidence_strength 的阈值（例如",
+    "impact": [
+      "spec"
+    ],
+    "recommended_default": "Proceed with documented recommended defaults; record as ASSUMPTION and tune via golden-set grid search.",
+    "requires_confirmation": false,
+    "source": {
+      "path": "/Users/lee/Documents/AI/Document Assistant Agent/DEV_SPEC.md",
+      "line": 959
+    },
+    "evidence": "> 待讨论：evidence_strength 的阈值（例如"
+  },
+  {
+    "id": "q0008",
+    "kind": "spec_tbd",
+    "question": "> 待讨论：MIXED 的产品形态（强制先澄清 vs 允许一次回答做双域检索）。",
+    "impact": [
+      "spec"
+    ],
+    "recommended_default": "Proceed with documented recommended defaults; record as ASSUMPTION and tune via golden-set grid search.",
+    "requires_confirmation": false,
+    "source": {
+      "path": "/Users/lee/Documents/AI/Document Assistant Agent/DEV_SPEC.md",
+      "line": 1099
+    },
+    "evidence": "> 待讨论：MIXED 的产品形态（强制先澄清 vs 允许一次回答做双域检索）。"
+  },
+  {
+    "id": "q0009",
+    "kind": "missing_path",
+    "question": "Missing expected path: server/app/ingestion",
+    "impact": [
+      "scaffold"
+    ],
+    "recommended_default": "Run scaffold_repo.py in dry-run; then apply scaffold after confirmation.",
+    "requires_confirmation": false,
+    "source": {
+      "path": "/Users/lee/Documents/AI/Document Assistant Agent/server/app/ingestion",
+      "line": null
+    },
+    "evidence": null
+  },
+  {
+    "id": "q0010",
+    "kind": "missing_path",
+    "question": "Missing expected path: server/app/retrieval",
+    "impact": [
+      "scaffold"
+    ],
+    "recommended_default": "Run scaffold_repo.py in dry-run; then apply scaffold after confirmation.",
+    "requires_confirmation": false,
+    "source": {
+      "path": "/Users/lee/Documents/AI/Document Assistant Agent/server/app/retrieval",
+      "line": null
+    },
+    "evidence": null
+  },
+  {
+    "id": "q0011",
+    "kind": "missing_path",
+    "question": "Missing expected path: server/app/orchestrator",
+    "impact": [
+      "scaffold"
+    ],
+    "recommended_default": "Run scaffold_repo.py in dry-run; then apply scaffold after confirmation.",
+    "requires_confirmation": false,
+    "source": {
+      "path": "/Users/lee/Documents/AI/Document Assistant Agent/server/app/orchestrator",
+      "line": null
+    },
+    "evidence": null
+  },
+  {
+    "id": "q0012",
+    "kind": "missing_path",
+    "question": "Missing expected path: server/app/agents",
+    "impact": [
+      "scaffold"
+    ],
+    "recommended_default": "Run scaffold_repo.py in dry-run; then apply scaffold after confirmation.",
+    "requires_confirmation": false,
+    "source": {
+      "path": "/Users/lee/Documents/AI/Document Assistant Agent/server/app/agents",
+      "line": null
+    },
+    "evidence": null
+  },
+  {
+    "id": "q0013",
+    "kind": "missing_path",
+    "question": "Missing expected path: server/app/observability",
+    "impact": [
+      "scaffold"
+    ],
+    "recommended_default": "Run scaffold_repo.py in dry-run; then apply scaffold after confirmation.",
+    "requires_confirmation": false,
+    "source": {
+      "path": "/Users/lee/Documents/AI/Document Assistant Agent/server/app/observability",
+      "line": null
+    },
+    "evidence": null
+  },
+  {
+    "id": "q0014",
+    "kind": "missing_path",
+    "question": "Missing expected path: server/app/evaluation",
+    "impact": [
+      "scaffold"
+    ],
+    "recommended_default": "Run scaffold_repo.py in dry-run; then apply scaffold after confirmation.",
+    "requires_confirmation": false,
+    "source": {
+      "path": "/Users/lee/Documents/AI/Document Assistant Agent/server/app/evaluation",
+      "line": null
+    },
+    "evidence": null
+  },
+  {
+    "id": "q0015",
+    "kind": "missing_path",
+    "question": "Missing expected path: server/app/sft",
+    "impact": [
+      "scaffold"
+    ],
+    "recommended_default": "Run scaffold_repo.py in dry-run; then apply scaffold after confirmation.",
+    "requires_confirmation": false,
+    "source": {
+      "path": "/Users/lee/Documents/AI/Document Assistant Agent/server/app/sft",
+      "line": null
+    },
+    "evidence": null
+  },
+  {
+    "id": "q0016",
+    "kind": "missing_path",
+    "question": "Missing expected path: web",
+    "impact": [
+      "scaffold"
+    ],
+    "recommended_default": "Run scaffold_repo.py in dry-run; then apply scaffold after confirmation.",
+    "requires_confirmation": false,
+    "source": {
+      "path": "/Users/lee/Documents/AI/Document Assistant Agent/web",
+      "line": null
+    },
+    "evidence": null
+  },
+  {
+    "id": "q0017",
+    "kind": "missing_path",
+    "question": "Missing expected path: datasets",
+    "impact": [
+      "scaffold"
+    ],
+    "recommended_default": "Run scaffold_repo.py in dry-run; then apply scaffold after confirmation.",
+    "requires_confirmation": false,
+    "source": {
+      "path": "/Users/lee/Documents/AI/Document Assistant Agent/datasets",
+      "line": null
+    },
+    "evidence": null
+  },
+  {
+    "id": "q0018",
+    "kind": "missing_path",
+    "question": "Missing expected path: data",
+    "impact": [
+      "scaffold"
+    ],
+    "recommended_default": "Run scaffold_repo.py in dry-run; then apply scaffold after confirmation.",
+    "requires_confirmation": false,
+    "source": {
+      "path": "/Users/lee/Documents/AI/Document Assistant Agent/data",
+      "line": null
+    },
+    "evidence": null
+  }
+]
