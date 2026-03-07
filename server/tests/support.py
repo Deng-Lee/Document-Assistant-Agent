@@ -15,7 +15,7 @@ def activate_test_profile(profile_name: str = "fake") -> None:
 def endpoint_map(app) -> dict[str, object]:
     mapping: dict[str, object] = {}
     for route in app.routes:
-        if not hasattr(route, "path"):
+        if not hasattr(route, "path") or not hasattr(route, "endpoint"):
             continue
         path = getattr(route, "path", None)
         if path and path not in mapping:

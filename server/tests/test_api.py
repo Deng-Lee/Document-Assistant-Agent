@@ -63,6 +63,17 @@ class APITests(unittest.TestCase):
             )
             self.assertTrue(all(item["jobs"] for item in dir_payload["results"]))
 
+    def test_root_route_serves_web_shell(self) -> None:
+        with TemporaryDirectory() as tmp:
+            app = create_test_app(tmp)
+            routes = endpoint_map(app)
+
+            response = routes["/"]()
+            self.assertTrue(str(response.path).endswith("web/app/index.html"))
+            self.assertTrue(Path(response.path).exists())
+            self.assertTrue((Path(response.path).with_name("app.js")).exists())
+            self.assertTrue((Path(response.path).with_name("styles.css")).exists())
+
     def test_chat_turn_persists_conversation_state(self) -> None:
         with TemporaryDirectory() as tmp:
             app = create_test_app(tmp)

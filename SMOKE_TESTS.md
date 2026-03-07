@@ -141,10 +141,13 @@ Notes:
   - `server/app/orchestrator`
   - `server/app/retrieval`
   - `server/app/ingestion`
+  - `web/app`
+  - `web/lib`
 - Goal:
-  - verify the API layer is wired to the repository services and stateful chat path
+  - verify the API layer is wired to the repository services, stateful chat path, and local web shell
 - Coverage:
   - app creation and route registration
+  - `/`
   - `/api/health`
   - `/api/ingest/text`
   - `/api/ingest/file`

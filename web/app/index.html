@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document Assistant Console</title>
+    <link rel="stylesheet" href="/ui/app/styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <p class="eyebrow">Personal Document Assistant</p>
+        <h1>本地知识工作台</h1>
+        <p class="hero-copy">
+          同一页里完成健康检查、文本导入、聊天调度与 trace 复盘，直接对接当前 FastAPI API。
+        </p>
+        <div class="status-strip">
+          <span class="status-label">API</span>
+          <strong id="health-status">checking</strong>
+          <button id="refresh-dashboard" type="button">刷新面板</button>
+        </div>
+      </header>
+
+      <main class="dashboard-grid">
+        <section class="panel panel-ingest">
+          <div class="panel-head">
+            <p class="panel-kicker">Ingest</p>
+            <h2>导入 Markdown 文本</h2>
+          </div>
+          <form id="ingest-form" class="stack">
+            <label class="field">
+              <span>source_path_hint</span>
+              <input id="ingest-source-path" type="text" value="web_console.md" />
+            </label>
+            <label class="field">
+              <span>markdown_text</span>
+              <textarea id="ingest-markdown" rows="12">---
+type: notes
+title: Console Note
+---
+
+# Demo
+
+The shell is wired to the same API contracts used by tests.
+</textarea>
+            </label>
+            <button type="submit">导入文本</button>
+          </form>
+          <pre id="ingest-result" class="response-box muted">等待导入</pre>
+        </section>
+
+        <section class="panel panel-chat">
+          <div class="panel-head">
+            <p class="panel-kicker">Chat</p>
+            <h2>发起一次对话</h2>
+          </div>
+          <form id="chat-form" class="stack">
+            <label class="field">
+              <span>conversation_id</span>
+              <input id="conversation-id" type="text" placeholder="留空则由后端创建" />
+            </label>
+            <label class="field">
+              <span>user_message</span>
+              <textarea id="chat-message" rows="5">迷宫和镜子有什么联系？</textarea>
+            </label>
+            <button type="submit">发送</button>
+          </form>
+          <pre id="chat-result" class="response-box muted">等待消息</pre>
+        </section>
+
+        <section class="panel panel-traces">
+          <div class="panel-head">
+            <p class="panel-kicker">Traces</p>
+            <h2>最近的轨迹</h2>
+          </div>
+          <div id="trace-list" class="trace-list">
+            <p class="muted">等待加载</p>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="/ui/app/app.js"></script>
+  </body>
+</html>

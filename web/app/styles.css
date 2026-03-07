@@ -1,0 +1,244 @@
+:root {
+  --paper: #f5f1e8;
+  --ink: #182021;
+  --accent: #d1683f;
+  --accent-deep: #8f3b21;
+  --panel: rgba(255, 252, 246, 0.88);
+  --line: rgba(24, 32, 33, 0.12);
+  --shadow: 0 24px 60px rgba(61, 39, 26, 0.18);
+  --mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  --display: "Space Grotesk", "Avenir Next", "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at top left, rgba(209, 104, 63, 0.3), transparent 34%),
+    radial-gradient(circle at bottom right, rgba(17, 78, 90, 0.24), transparent 32%),
+    linear-gradient(140deg, #f2ebdc 0%, #f9f6ef 42%, #ece4d6 100%);
+  font-family: var(--display);
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+.page-shell {
+  width: min(1200px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 32px 0 48px;
+}
+
+.hero {
+  padding: 28px;
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  background:
+    linear-gradient(135deg, rgba(255, 250, 242, 0.95), rgba(255, 245, 234, 0.9)),
+    rgba(255, 255, 255, 0.6);
+  box-shadow: var(--shadow);
+}
+
+.eyebrow,
+.panel-kicker {
+  margin: 0 0 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.72rem;
+  color: var(--accent-deep);
+}
+
+.hero h1,
+.panel h2 {
+  margin: 0;
+  font-weight: 700;
+}
+
+.hero h1 {
+  font-size: clamp(2.3rem, 5vw, 4.8rem);
+  line-height: 0.96;
+  max-width: 10ch;
+}
+
+.hero-copy {
+  max-width: 52ch;
+  margin: 16px 0 0;
+  color: rgba(24, 32, 33, 0.78);
+}
+
+.status-strip {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-top: 24px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: rgba(24, 32, 33, 0.06);
+}
+
+.status-label {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: rgba(24, 32, 33, 0.62);
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 18px;
+  margin-top: 20px;
+}
+
+.panel {
+  border: 1px solid var(--line);
+  border-radius: 26px;
+  padding: 22px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(14px);
+}
+
+.panel-ingest {
+  grid-column: span 5;
+}
+
+.panel-chat {
+  grid-column: span 7;
+}
+
+.panel-traces {
+  grid-column: 1 / -1;
+}
+
+.stack {
+  display: grid;
+  gap: 14px;
+}
+
+.field {
+  display: grid;
+  gap: 8px;
+}
+
+.field span {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: rgba(24, 32, 33, 0.64);
+}
+
+input,
+textarea,
+button,
+.trace-card,
+.response-box {
+  border-radius: 18px;
+}
+
+input,
+textarea {
+  width: 100%;
+  border: 1px solid rgba(24, 32, 33, 0.1);
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--ink);
+  padding: 14px 16px;
+}
+
+textarea {
+  resize: vertical;
+}
+
+button {
+  border: none;
+  background: linear-gradient(120deg, var(--accent), #ec8853);
+  color: white;
+  padding: 12px 18px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+button:hover {
+  transform: translateY(-1px);
+}
+
+.response-box {
+  margin: 18px 0 0;
+  padding: 16px;
+  min-height: 152px;
+  border: 1px solid rgba(24, 32, 33, 0.08);
+  background: rgba(18, 24, 25, 0.92);
+  color: #f8f3eb;
+  font-family: var(--mono);
+  font-size: 0.84rem;
+  overflow: auto;
+}
+
+.trace-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.trace-card {
+  padding: 16px;
+  border: 1px solid rgba(24, 32, 33, 0.08);
+  background: rgba(255, 255, 255, 0.76);
+}
+
+.trace-card header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.trace-id {
+  font-family: var(--mono);
+  font-size: 0.88rem;
+}
+
+.trace-meta {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  color: rgba(24, 32, 33, 0.72);
+  font-size: 0.9rem;
+}
+
+.muted {
+  color: rgba(24, 32, 33, 0.56);
+}
+
+@media (max-width: 900px) {
+  .panel-ingest,
+  .panel-chat,
+  .panel-traces {
+    grid-column: 1 / -1;
+  }
+
+  .page-shell {
+    width: min(100% - 20px, 960px);
+    padding-top: 20px;
+  }
+
+  .hero,
+  .panel {
+    border-radius: 22px;
+    padding: 18px;
+  }
+
+  .status-strip {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+}

@@ -305,7 +305,7 @@ def main() -> None:
         api_app = create_app(api_root)
         api_routes = {}
         for route in api_app.routes:
-            if not hasattr(route, "path"):
+            if not hasattr(route, "path") or not hasattr(route, "endpoint"):
                 continue
             path = getattr(route, "path", None)
             if path and path not in api_routes:
@@ -315,6 +315,13 @@ def main() -> None:
                     api_routes[f"{method} {path}"] = route.endpoint
         health_payload = _to_dict(api_routes["/api/health"]())
         assert health_payload["status"] == "ok"
+        ui_shell = api_routes["/"]()
+        assert Path(ui_shell.path).name == "index.html"
+        assert Path(ui_shell.path).exists()
+        assert (Path(ui_shell.path).with_name("app.js")).exists()
+        assert (Path(ui_shell.path).with_name("styles.css")).exists()
+        assert (repo_root / "web" / "lib" / "api.js").exists()
+        assert (repo_root / "web" / "components" / "renderers.js").exists()
 
         api_ingest = _to_dict(
             api_routes["/api/ingest/text"](

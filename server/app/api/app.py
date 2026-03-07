@@ -5,6 +5,8 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from server.app.agents.bjj_coach.types import BJJCoachInput
 from server.app.core import (
@@ -68,6 +70,12 @@ def create_app(root_dir: str | Path | None = None) -> FastAPI:
     resolved_root = Path(root_dir or Path.cwd()).resolve()
     app = FastAPI(title="Personal Document Assistant API", version="0.1.0")
     app.state.pda = create_app_state(resolved_root)
+    ui_root = _repo_root() / "web"
+    app.mount("/ui", StaticFiles(directory=ui_root), name="ui")
+
+    @app.get("/", include_in_schema=False)
+    def web_shell() -> FileResponse:
+        return FileResponse(ui_root / "app" / "index.html")
 
     @app.get("/api/health", response_model=HealthResponse)
     def health() -> HealthResponse:
@@ -518,3 +526,7 @@ def _resolve_input_path(root_dir: str | Path, raw_path: str, must_be_dir: bool) 
     if not must_be_dir and not resolved.is_file():
         raise HTTPException(status_code=400, detail=f"expected file path: {resolved}")
     return resolved
+
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[3]
