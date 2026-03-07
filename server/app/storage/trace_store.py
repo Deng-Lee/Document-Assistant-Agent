@@ -20,3 +20,6 @@ class JSONTraceStore:
     def read_trace(self, trace_id: str) -> TraceRecord:
         payload = read_json_file(self.root_dir / f"{trace_id}.json")
         return TraceRecord(**payload)
+
+    def list_trace_ids(self) -> list[str]:
+        return sorted(path.stem for path in self.root_dir.glob("*.json"))

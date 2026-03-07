@@ -1,14 +1,20 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 
 from server.app.core import (
     ChunkRecord,
     DocVersionRecord,
     DocumentRecord,
+    EvalFailure,
+    EvalMetricValue,
     EvalRunResult,
+    EvalSummary,
     GoldenCase,
+    JobRecord,
+    JobStatus,
 )
 
 from .serialization import model_to_dict, model_to_json, parse_json_blob
@@ -108,6 +114,27 @@ class SQLiteDocumentRepository:
                     "INSERT INTO chunk_fts (chunk_id, doc_type, clean_search_text) VALUES (?, ?, ?)",
                     (chunk.chunk_id, chunk.doc_type.value, chunk.clean_search_text),
                 )
+            connection.commit()
+
+    def get_chunk(self, chunk_id: str) -> ChunkRecord | None:
+        with self.store.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT chunk_id, doc_id, doc_version_id, doc_type, chunk_type, locator_json, metadata_digest_json,
+                       safe_summary, clean_search_text, clean_embed_text, raw_text_ref
+                FROM chunks
+                WHERE chunk_id = ?
+                """,
+                (chunk_id,),
+            ).fetchone()
+        return self._row_to_chunk(row) if row is not None else None
+
+    def update_chunk_safe_summary(self, chunk_id: str, safe_summary: str) -> None:
+        with self.store.connect() as connection:
+            connection.execute(
+                "UPDATE chunks SET safe_summary = ? WHERE chunk_id = ?",
+                (safe_summary, chunk_id),
+            )
             connection.commit()
 
     def list_chunks(self) -> list[ChunkRecord]:
@@ -289,3 +316,139 @@ class SQLiteGoldenCaseRepository:
                 },
             )
             connection.commit()
+
+    def list_eval_runs(self) -> list[EvalRunResult]:
+        with self.store.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT eval_run_id, eval_set_id, model_variant, created_at, metrics_json, failures_json
+                FROM eval_runs
+                ORDER BY created_at DESC
+                """
+            ).fetchall()
+        results: list[EvalRunResult] = []
+        for row in rows:
+            metrics_payload = parse_json_blob(row["metrics_json"]) or []
+            failures_payload = parse_json_blob(row["failures_json"]) or []
+            results.append(
+                EvalRunResult(
+                    eval_run_id=row["eval_run_id"],
+                    eval_set_id=row["eval_set_id"],
+                    model_variant=row["model_variant"],
+                    created_at=row["created_at"],
+                    metrics=[EvalMetricValue(**metric) for metric in metrics_payload],
+                    failures=[EvalFailure(**failure) for failure in failures_payload],
+                )
+            )
+        return results
+
+
+class SQLiteJobRepository:
+    def __init__(self, store: SQLiteStore):
+        self.store = store
+
+    def enqueue_job(self, job: JobRecord) -> None:
+        payload = model_to_dict(job)
+        with self.store.connect() as connection:
+            connection.execute(
+                """
+                INSERT OR REPLACE INTO jobs
+                (job_id, job_type, status, payload_json, error_message, created_at, updated_at)
+                VALUES (:job_id, :job_type, :status, :payload_json, :error_message, :created_at, :updated_at)
+                """,
+                {
+                    "job_id": payload["job_id"],
+                    "job_type": payload["job_type"],
+                    "status": payload["status"],
+                    "payload_json": model_to_json(job.payload),
+                    "error_message": payload.get("error_message"),
+                    "created_at": payload["created_at"],
+                    "updated_at": payload["updated_at"],
+                },
+            )
+            connection.commit()
+
+    def get_job(self, job_id: str) -> JobRecord | None:
+        with self.store.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT job_id, job_type, status, payload_json, error_message, created_at, updated_at
+                FROM jobs
+                WHERE job_id = ?
+                """,
+                (job_id,),
+            ).fetchone()
+        return _row_to_job(row) if row is not None else None
+
+    def list_jobs(self, status: JobStatus | None = None, limit: int | None = None) -> list[JobRecord]:
+        sql = """
+            SELECT job_id, job_type, status, payload_json, error_message, created_at, updated_at
+            FROM jobs
+        """
+        parameters: list[object] = []
+        if status is not None:
+            sql += " WHERE status = ?"
+            parameters.append(status.value)
+        sql += " ORDER BY created_at ASC, job_id ASC"
+        if limit is not None:
+            sql += " LIMIT ?"
+            parameters.append(limit)
+        with self.store.connect() as connection:
+            rows = connection.execute(sql, tuple(parameters)).fetchall()
+        return [_row_to_job(row) for row in rows]
+
+    def claim_next_job(self, job_types: list[str] | None = None) -> JobRecord | None:
+        clauses = ["status = ?"]
+        parameters: list[object] = [JobStatus.QUEUED.value]
+        if job_types:
+            placeholders = ", ".join("?" for _ in job_types)
+            clauses.append(f"job_type IN ({placeholders})")
+            parameters.extend(job_types)
+
+        with self.store.connect() as connection:
+            row = connection.execute(
+                f"""
+                SELECT job_id, job_type, status, payload_json, error_message, created_at, updated_at
+                FROM jobs
+                WHERE {' AND '.join(clauses)}
+                ORDER BY created_at ASC, job_id ASC
+                LIMIT 1
+                """,
+                tuple(parameters),
+            ).fetchone()
+            if row is None:
+                return None
+            connection.execute(
+                """
+                UPDATE jobs
+                SET status = ?, error_message = NULL, updated_at = ?
+                WHERE job_id = ?
+                """,
+                (JobStatus.RUNNING.value, datetime.utcnow().isoformat(), row["job_id"]),
+            )
+            connection.commit()
+        return self.get_job(row["job_id"])
+
+    def update_job_status(
+        self,
+        job_id: str,
+        status: JobStatus,
+        error_message: str | None = None,
+    ) -> JobRecord | None:
+        with self.store.connect() as connection:
+            connection.execute(
+                """
+                UPDATE jobs
+                SET status = ?, error_message = ?, updated_at = ?
+                WHERE job_id = ?
+                """,
+                (status.value, error_message, datetime.utcnow().isoformat(), job_id),
+            )
+            connection.commit()
+        return self.get_job(job_id)
+
+
+def _row_to_job(row) -> JobRecord:
+    payload = dict(row)
+    payload["payload"] = parse_json_blob(payload.pop("payload_json"))
+    return JobRecord(**payload)

@@ -28,6 +28,14 @@ class EvalMetricValue(PDABaseModel):
     value: float
 
 
+class EvalSummary(PDABaseModel):
+    sample_count: int = 0
+    p50: float | None = None
+    p95: float | None = None
+    min: float | None = None
+    max: float | None = None
+
+
 class EvalFailure(PDABaseModel):
     trace_id: str
     failure_tags: list[str] = Field(default_factory=list)
@@ -41,3 +49,5 @@ class EvalRunResult(PDABaseModel):
     created_at: datetime
     metrics: list[EvalMetricValue] = Field(default_factory=list)
     failures: list[EvalFailure] = Field(default_factory=list)
+    latency_summary: EvalSummary | None = None
+    cost_summary: EvalSummary | None = None

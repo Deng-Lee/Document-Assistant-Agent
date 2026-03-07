@@ -116,6 +116,91 @@ Notes:
 - Result:
   - passed
 
+### 2026-03-07: Jobs Smoke
+- Modules:
+  - `server/app/jobs`
+  - `server/app/storage`
+  - `server/app/ingestion`
+- Goal:
+  - verify queued jobs can be persisted, executed, and reflected back into repository state
+- Coverage:
+  - job enqueue and list
+  - `safe_summary_build`
+  - `reindex_doc_version`
+  - `reembed_doc_version`
+  - chunk `safe_summary` update after job execution
+- Result:
+  - passed
+
+### 2026-03-07: API Smoke
+- Modules:
+  - `server/app/api`
+  - `server/app/jobs`
+  - `server/app/orchestrator`
+  - `server/app/retrieval`
+  - `server/app/ingestion`
+- Goal:
+  - verify the API layer is wired to the repository services and stateful chat path
+- Coverage:
+  - app creation and route registration
+  - `/api/health`
+  - `/api/ingest/text`
+  - `/api/jobs`
+  - `/api/jobs/run-next`
+  - `/api/retrieve`
+  - `/api/chat/turn`
+  - `/api/traces`
+- Notes:
+  - current smoke uses registered FastAPI endpoint callables directly instead of `TestClient`, because the local dependency combination has a `starlette`/`httpx` incompatibility in test client construction
+- Result:
+  - passed
+
+### 2026-03-07: Observability Smoke
+- Modules:
+  - `server/app/observability`
+  - `server/app/storage`
+  - `server/app/core`
+- Goal:
+  - verify trace/span/event capture can be assembled and persisted using the unified recorder
+- Coverage:
+  - trace recorder span lifecycle
+  - structured event capture
+  - request/retrieval/evidence/generation log binding
+  - JSON trace store write/list/read round trip
+- Result:
+  - passed
+
+### 2026-03-07: Evaluation Smoke
+- Modules:
+  - `server/app/evaluation`
+  - `server/app/observability`
+  - `server/app/storage`
+- Goal:
+  - verify frozen-trace evaluation can compute hard metrics and persist an eval run
+- Coverage:
+  - trace loading from trace store
+  - hard metric aggregation
+  - eval run result creation
+  - eval result persistence and listing
+- Result:
+  - passed
+
+### 2026-03-07: SFT Smoke
+- Modules:
+  - `server/app/sft`
+  - `server/app/observability`
+  - `server/app/storage`
+- Goal:
+  - verify trace-driven SFT export and policy checkpoint metadata path are usable end-to-end
+- Coverage:
+  - dataset export from frozen trace
+  - manifest generation
+  - `train.jsonl` conversion
+  - policy checkpoint registration
+  - base/policy model resolution
+- Result:
+  - passed
+
 ## Maintenance Rule
 - If a smoke test is replaced, this document must note:
   - what changed

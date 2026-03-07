@@ -5,7 +5,7 @@ from hashlib import sha1
 from pathlib import Path
 from uuid import uuid4
 
-from server.app.core import DocVersionRecord, DocumentRecord, DocumentType
+from server.app.core import DocVersionRecord, DocumentRecord, RuntimeConfigSnapshot, build_runtime_config
 from server.app.storage import DocumentRepository, FileStore
 
 from .chunker import build_chunk_records
@@ -15,9 +15,15 @@ from .types import IngestionJob, IngestionResult
 
 
 class IngestionService:
-    def __init__(self, document_repository: DocumentRepository, file_store: FileStore):
+    def __init__(
+        self,
+        document_repository: DocumentRepository,
+        file_store: FileStore,
+        runtime_config: RuntimeConfigSnapshot | None = None,
+    ):
         self.document_repository = document_repository
         self.file_store = file_store
+        self.runtime_config = runtime_config or build_runtime_config()
         self.loader = MarkdownLoader()
         self.parser = MarkdownParser()
 
@@ -66,8 +72,8 @@ class IngestionService:
                 payload={
                     "chunk_id": chunk.chunk_id,
                     "doc_version_id": chunk.doc_version_id,
-                    "summary_prompt_version": "safe_summary.v1",
-                    "summary_model": "pending-provider",
+                    "summary_prompt_version": self.runtime_config.prompt_versions.safe_summary,
+                    "summary_model": self.runtime_config.model_routing.base_model,
                 },
             )
             for chunk in chunks

@@ -31,8 +31,9 @@ from .documents import (
 )
 from .enums import *
 from .errors import APIErrorDetail, ErrorCode
-from .evaluation import EvalRunRequest, EvalRunResult, GoldenCase
+from .evaluation import EvalFailure, EvalMetricValue, EvalRunRequest, EvalRunResult, EvalSummary, GoldenCase
 from .evidence import EvidencePack, EvidencePackItem, RankSignals
+from .jobs import JobRecord, JobRunResult
 from .locators import CharRange, LineRange, LocatorIndex, SourceLocator
 from .model_profiles import MODEL_PROFILE_ENV, active_model_profile_name, get_model_profile, set_active_model_profile
 from .profile import ProfileConstraint, ProfileSummary
@@ -93,8 +94,11 @@ __all__ = [
     "DocumentRecord",
     "EmbeddingRecord",
     "ErrorCode",
+    "EvalFailure",
+    "EvalMetricValue",
     "EvalRunRequest",
     "EvalRunResult",
+    "EvalSummary",
     "EvidencePack",
     "EvidencePackItem",
     "EvidenceStrength",
@@ -103,6 +107,8 @@ __all__ = [
     "GenerationLog",
     "GoldenCase",
     "DrillStart",
+    "JobRecord",
+    "JobRunResult",
     "LineRange",
     "LiteraryAnchor",
     "LiteraryFinalAnswer",

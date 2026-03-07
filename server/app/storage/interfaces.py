@@ -8,6 +8,8 @@ from server.app.core import (
     DocumentRecord,
     EvalRunResult,
     GoldenCase,
+    JobRecord,
+    JobStatus,
     TraceRecord,
 )
 
@@ -20,6 +22,10 @@ class DocumentRepository(Protocol):
     def insert_doc_version(self, doc_version: DocVersionRecord) -> None: ...
 
     def insert_chunk(self, chunk: ChunkRecord) -> None: ...
+
+    def get_chunk(self, chunk_id: str) -> ChunkRecord | None: ...
+
+    def update_chunk_safe_summary(self, chunk_id: str, safe_summary: str) -> None: ...
 
     def list_chunks(self) -> list[ChunkRecord]: ...
 
@@ -37,6 +43,8 @@ class GoldenCaseRepository(Protocol):
 
     def record_eval_run(self, result: EvalRunResult) -> None: ...
 
+    def list_eval_runs(self) -> list[EvalRunResult]: ...
+
 
 class FileStore(Protocol):
     def write_markdown_snapshot(self, doc_id: str, doc_version_id: str, raw_text: str) -> str: ...
@@ -48,6 +56,25 @@ class TraceStore(Protocol):
     def write_trace(self, trace: TraceRecord) -> str: ...
 
     def read_trace(self, trace_id: str) -> TraceRecord: ...
+
+    def list_trace_ids(self) -> list[str]: ...
+
+
+class JobRepository(Protocol):
+    def enqueue_job(self, job: JobRecord) -> None: ...
+
+    def get_job(self, job_id: str) -> JobRecord | None: ...
+
+    def list_jobs(self, status: JobStatus | None = None, limit: int | None = None) -> list[JobRecord]: ...
+
+    def claim_next_job(self, job_types: list[str] | None = None) -> JobRecord | None: ...
+
+    def update_job_status(
+        self,
+        job_id: str,
+        status: JobStatus,
+        error_message: str | None = None,
+    ) -> JobRecord | None: ...
 
 
 class VectorStore(Protocol):

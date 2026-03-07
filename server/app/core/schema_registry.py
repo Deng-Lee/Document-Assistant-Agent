@@ -7,6 +7,7 @@ from .chat import ChatClarifyTurnResponse, ChatFinalTurnResponse, ClarifyRequest
 from .documents import BJJRecordFields, ChunkRecord, DocVersionRecord, DocumentRecord
 from .evaluation import EvalRunRequest, EvalRunResult, GoldenCase
 from .evidence import EvidencePack, EvidencePackItem
+from .jobs import JobRecord, JobRunResult
 from .profile import ProfileSummary
 from .retrieval import ExecutionPlan, PlanCheck, ProbeStats, RetrievalPlan
 from .runtime_config import RuntimeConfigSnapshot
@@ -35,6 +36,8 @@ SCHEMA_MODELS = {
     "bjj_validator_report": BJJValidatorReport,
     "literary_final_answer": LiteraryFinalAnswer,
     "trace_record": TraceRecord,
+    "job_record": JobRecord,
+    "job_run_result": JobRunResult,
     "golden_case": GoldenCase,
     "eval_run_request": EvalRunRequest,
     "eval_run_result": EvalRunResult,

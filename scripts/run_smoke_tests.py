@@ -36,14 +36,17 @@ def main() -> None:
         DocumentType,
         DocVersionRecord,
         EntryPoint,
+        EvalRunRequest,
         EvidencePack,
         GenerationLog,
         LineRange,
+        ModelVariant,
         Orientation,
         ProfileSummary,
         RequestLog,
         RetrievalLog,
         RuntimeConfigSnapshot,
+        SFTExportRequest,
         SourceLocator,
         TraceRecord,
         active_model_profile_name,
@@ -51,10 +54,23 @@ def main() -> None:
     )
     from server.app.agents import BJJCoachService, LiteraryService
     from server.app.agents.bjj_coach.types import BJJCoachInput
+    from server.app.api import create_app
+    from server.app.api.models import ChatTurnRequest, IngestTextRequest, RetrieveRequest, RunJobsRequest
+    from server.app.evaluation import EvaluationService
     from server.app.ingestion import IngestionService
+    from server.app.jobs import JobService
+    from server.app.observability import TraceRecorder
     from server.app.orchestrator import ConversationState, OrchestratorService
     from server.app.retrieval import RetrievalService
-    from server.app.storage import JSONTraceStore, LocalFileStore, SQLiteDocumentRepository, SQLiteStore
+    from server.app.sft import SFTService
+    from server.app.storage import (
+        JSONTraceStore,
+        LocalFileStore,
+        SQLiteDocumentRepository,
+        SQLiteGoldenCaseRepository,
+        SQLiteJobRepository,
+        SQLiteStore,
+    )
 
     print(f"active_profile={active_model_profile_name()}")
 
@@ -249,6 +265,129 @@ def main() -> None:
         assert "迷宫和镜子" in literary_result.text
         print("agents_smoke_ok")
 
+        job_repo = SQLiteJobRepository(repo2.store)
+        jobs = JobService(repo2, job_repo)
+        first_chunk = repo2.list_chunks()[0]
+        repo2.update_chunk_safe_summary(first_chunk.chunk_id, "")
+        queued_safe_summary = jobs.enqueue(
+            "safe_summary_build",
+            {
+                "chunk_id": first_chunk.chunk_id,
+                "doc_version_id": first_chunk.doc_version_id,
+                "summary_prompt_version": "safe_summary.v1",
+            },
+        )
+        queued_reindex = jobs.enqueue("reindex_doc_version", {"doc_version_id": first_chunk.doc_version_id})
+        queued_reembed = jobs.enqueue("reembed_doc_version", {"doc_version_id": first_chunk.doc_version_id})
+        assert job_repo.list_jobs(status=None, limit=None)
+        safe_summary_result = jobs.run_job(queued_safe_summary.job_id)
+        reindex_result = jobs.run_job(queued_reindex.job_id)
+        reembed_result = jobs.run_job(queued_reembed.job_id)
+        assert safe_summary_result.job.status.value == "succeeded"
+        assert repo2.get_chunk(first_chunk.chunk_id).safe_summary
+        assert reindex_result.job.status.value == "succeeded"
+        assert reembed_result.job.status.value == "succeeded"
+        print("jobs_smoke_ok")
+
+        api_root = root / "api_app"
+        api_app = create_app(api_root)
+        api_routes = {getattr(route, "path", None): route.endpoint for route in api_app.routes if hasattr(route, "path")}
+        health_payload = api_routes["/api/health"]()
+        assert health_payload["status"] == "ok"
+
+        api_ingest = api_routes["/api/ingest/text"](
+            IngestTextRequest(markdown_text=notes_markdown, source_path_hint="api_notes.md")
+        )
+        assert api_ingest["doc_id"]
+        assert api_ingest["chunk_ids"]
+        assert api_ingest["jobs"]
+
+        api_retrieve = api_routes["/api/retrieve"](RetrieveRequest(query_text="maze mirror", mode="full"))
+        assert api_retrieve["evidence_pack"]["items"]
+
+        api_chat = api_routes["/api/chat/turn"](ChatTurnRequest(user_message="迷宫和镜子有什么联系？"))
+        assert api_chat["response_type"] == "final_answer"
+        assert api_chat["conversation_id"]
+
+        api_jobs = api_routes["/api/jobs"]()
+        assert api_jobs["jobs"]
+        api_run_job = api_routes["/api/jobs/run-next"](RunJobsRequest(job_types=["safe_summary_build"]))
+        assert api_run_job["result"]["job"]["status"] == "succeeded"
+
+        api_traces = api_routes["/api/traces"]()
+        assert api_traces["traces"]
+        print("api_smoke_ok")
+
+        trace_store2 = JSONTraceStore(root / "traces_observability")
+        recorder = TraceRecorder(runtime_config_snapshot=orchestrator.runtime_config, conversation_id="conv_1")
+        with recorder.span("chat.turn_total", entrypoint="chat"):
+            recorder.set_request_log(
+                RequestLog(
+                    entrypoint="chat",
+                    domain=clarify_outcome.execution_plan.domain.value,
+                    task=clarify_outcome.execution_plan.task.value,
+                    confirmed_slots=follow_up.session_state.slots,
+                    execution_plan=follow_up.execution_plan,
+                )
+            )
+            recorder.add_stage_transition("start", "probe", need_probe=True)
+            recorder.set_retrieval_log(retrieval_outcome.retrieval_log)
+            recorder.set_evidence_log(EvidencePack(items=bjj_outcome.items))
+            recorder.set_generation_log(
+                GenerationLog(
+                    provider=orchestrator.runtime_config.model_routing.provider,
+                    model=orchestrator.runtime_config.model_routing.base_model,
+                    prompt_version=orchestrator.runtime_config.prompt_versions.bjj_coach,
+                    output=_to_dict(coach_result.final_answer),
+                    validator_report=coach_result.validator_report,
+                )
+            )
+            recorder.add_event("evidence.pack_selected", evidence_ids=[item.evidence_id for item in bjj_outcome.items])
+        trace_path = recorder.persist(trace_store2)
+        assert Path(trace_path).exists()
+        assert recorder.trace_id in trace_store2.list_trace_ids()
+        loaded_trace = trace_store2.read_trace(recorder.trace_id)
+        assert loaded_trace.trace_id == recorder.trace_id
+        assert loaded_trace.events
+        assert loaded_trace.spans
+        print("observability_smoke_ok")
+
+        eval_repo = SQLiteGoldenCaseRepository(repo2.store)
+        evaluation = EvaluationService(trace_store=trace_store2, golden_case_repository=eval_repo)
+        eval_result = evaluation.run(
+            EvalRunRequest(eval_set_id="smoke_eval", model_variant=ModelVariant.BASE),
+            trace_ids=[recorder.trace_id],
+        )
+        assert eval_result.metrics
+        assert evaluation.list_results()
+        print("evaluation_smoke_ok")
+
+        sft = SFTService(trace_store=trace_store2)
+        dataset_dir = root / "datasets" / "sft" / "v1" / "smoke"
+        manifest, samples = sft.export_dataset(
+            request=SFTExportRequest(trace_filter={}, format="jsonl"),
+            output_dir=dataset_dir,
+            trace_ids=[recorder.trace_id],
+        )
+        assert manifest.sample_count == 1
+        assert samples
+        assert (dataset_dir / "dataset_export.jsonl").exists()
+        assert (dataset_dir / "manifest.json").exists()
+
+        train_path = sft.build_train_rows(samples, dataset_dir / "train.jsonl")
+        assert train_path.exists()
+        checkpoint = sft.register_policy_checkpoint(
+            output_dir=root / "data" / "policy_checkpoints" / "smoke_run",
+            base_model=orchestrator.runtime_config.model_routing.base_model,
+            dataset_manifest=manifest,
+        )
+        train_request = sft.build_policy_train_request(train_path, root / "data" / "policy_checkpoints" / "smoke_run", dry_run=True)
+        assert checkpoint.policy_model_ref.startswith("policy://")
+        assert train_request.dry_run is True
+        assert sft.resolve_model_for_variant(orchestrator.runtime_config, ModelVariant.BASE) == orchestrator.runtime_config.model_routing.base_model
+        assert sft.resolve_model_for_variant(orchestrator.runtime_config, ModelVariant.POLICY, checkpoint) == checkpoint.policy_model_ref
+        print("sft_smoke_ok")
+
     print("all_smoke_tests_ok")
 
 
@@ -262,6 +401,16 @@ def _date(year: int, month: int, day: int):
     from datetime import date
 
     return date(year, month, day)
+
+
+def _to_dict(model):
+    if model is None:
+        return {}
+    if hasattr(model, "model_dump"):
+        return model.model_dump(by_alias=True)
+    if hasattr(model, "dict"):
+        return model.dict(by_alias=True)
+    return dict(model)
 
 
 if __name__ == "__main__":

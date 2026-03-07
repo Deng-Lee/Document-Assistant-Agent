@@ -1,0 +1,231 @@
+{
+  "trace_id": "trace_c89ef98834a5",
+  "conversation_id": "conv_97923dcb0fb9",
+  "runtime_config_snapshot": {
+    "doc_version_ids": [],
+    "embedding_version_id": "mock-embedding:v1",
+    "prompt_versions": {
+      "bjj_coach": "bjj_coach.v1",
+      "literary": "literary.v1",
+      "safe_summary": "safe_summary.v1",
+      "replan": "replan.v1"
+    },
+    "policy_version": "base",
+    "profile_version_id": null,
+    "trace_capture_level": "minimal",
+    "retrieval": {
+      "probe_top_k": 12,
+      "full_top_k": 24,
+      "max_chunks_per_doc": 3,
+      "min_docs": 1,
+      "token_budget": 4000
+    },
+    "orchestrator": {
+      "domain_bjj_threshold": 0.65,
+      "domain_notes_threshold": 0.35,
+      "slot_entropy_threshold": 0.6,
+      "evidence_strength_threshold": 0.4,
+      "clarify_round_limit": 2,
+      "write_intent_prefixes": [
+        "帮我记录",
+        "记录一下",
+        "新增训练",
+        "写入日志",
+        "保存这条笔记"
+      ],
+      "mixed_domain_strategy": "clarify_first"
+    },
+    "bjj_gate": {
+      "low_evidence_chunk_min": 2,
+      "high_evidence_chunk_min": 3,
+      "doc_type_purity_min": 0.8,
+      "position_match_min": 0.5,
+      "position_concentration_min": 0.5,
+      "low_evidence_concentration_floor": 0.35,
+      "coach_clarify_round_limit": 1
+    },
+    "model_routing": {
+      "profile_name": "fake",
+      "provider": "mock",
+      "base_model": "mock-bjj-base",
+      "policy_model": "mock-bjj-policy",
+      "embedding_model": "mock-embedding"
+    },
+    "generation": {
+      "bjj": {
+        "temperature": 0.0,
+        "top_p": 1.0,
+        "max_tokens": 1200.0
+      },
+      "literary": {
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "max_tokens": 1400.0
+      },
+      "replan": {
+        "temperature": 0.1,
+        "top_p": 1.0,
+        "max_tokens": 700.0
+      },
+      "safe_summary": {
+        "temperature": 0.0,
+        "top_p": 1.0,
+        "max_tokens": 200.0
+      }
+    }
+  },
+  "request_log": {
+    "entrypoint": "chat",
+    "domain": "NOTES",
+    "task": "COACH_LITERARY",
+    "profile_version_id": "profile_default",
+    "confirmed_slots": {},
+    "plan_check": null,
+    "execution_plan": {
+      "task": "COACH_LITERARY",
+      "domain": "NOTES",
+      "slots": {},
+      "next_action": "RETRIEVE",
+      "clarify": null,
+      "retrieval_plan": {
+        "doc_type": "notes",
+        "filters": {
+          "doc_type": "notes",
+          "date_range": null,
+          "position": null,
+          "orientation": null,
+          "distance": null,
+          "goal": null,
+          "opponent_control": null,
+          "heading_hints": []
+        },
+        "query_original": "迷宫和镜子有什么联系？",
+        "query_text": "迷宫和镜子有什么联系？",
+        "top_k": 24,
+        "per_doc_limit": 3,
+        "token_budget": 4000
+      },
+      "explain": {
+        "reason_codes": [],
+        "probe_used": true
+      }
+    },
+    "stage_transitions": []
+  },
+  "retrieval_log": {
+    "retrieval_plan": {
+      "doc_type": "notes",
+      "filters": {
+        "doc_type": "notes",
+        "date_range": null,
+        "position": null,
+        "orientation": null,
+        "distance": null,
+        "goal": null,
+        "opponent_control": null,
+        "heading_hints": []
+      },
+      "query_original": "迷宫和镜子有什么联系？",
+      "query_text": "迷宫和镜子有什么联系？",
+      "top_k": 24,
+      "per_doc_limit": 3,
+      "token_budget": 4000
+    },
+    "probe_stats": null,
+    "structured_filter_count": 1,
+    "bm25_count": 0,
+    "dense_count": 0,
+    "discarded_after_filter": 0,
+    "notes": [
+      "dense_disabled"
+    ]
+  },
+  "evidence_log": {
+    "items": [
+      {
+        "evidence_id": "chunk_02c6fb06af6f",
+        "doc_id": "doc_6dcd4ce23d88",
+        "doc_version_id": "dv_720d8e73e562",
+        "locator": {
+          "doc_version_id": "dv_720d8e73e562",
+          "source_path": null,
+          "line_range": {
+            "start": 7,
+            "end": 8
+          },
+          "char_range": {
+            "start": 39,
+            "end": 56
+          }
+        },
+        "safe_summary": "Maze and mirror.",
+        "metadata_digest": {
+          "date": null,
+          "position": null,
+          "orientation": null,
+          "distance": null,
+          "goal": null,
+          "opponent_control": null,
+          "heading_path": [
+            "Borges"
+          ]
+        },
+        "rank_signals": {
+          "structured_filter_applied": true,
+          "bm25_rank": null,
+          "dense_rank": null,
+          "rrf_rank": 1
+        }
+      }
+    ],
+    "token_budget": 4000,
+    "per_doc_limit": 3
+  },
+  "generation_log": {
+    "provider": "mock",
+    "model": "mock-bjj-base",
+    "prompt_version": "literary.v1",
+    "prompt_hash": null,
+    "latency_ms": null,
+    "token_usage": {},
+    "cost_estimate": null,
+    "output": {
+      "text": "围绕“迷宫和镜子有什么联系？”，我会优先沿着你笔记里已经出现的意象和语气继续推进。当前参考锚点来自 dv_720d8e73e562:7。接下来适合先保留原有语感，再把主题推向更明确的冲突或反转。",
+      "anchors": [
+        {
+          "evidence_id": "chunk_02c6fb06af6f",
+          "doc_version_id": "dv_720d8e73e562",
+          "locator": {
+            "doc_version_id": "dv_720d8e73e562",
+            "source_path": null,
+            "line_range": {
+              "start": 7,
+              "end": 8
+            },
+            "char_range": {
+              "start": 39,
+              "end": 56
+            }
+          },
+          "citation": "dv_720d8e73e562:7",
+          "heading_path": [
+            "Borges"
+          ]
+        }
+      ]
+    },
+    "validator_report": null
+  },
+  "spans": [
+    {
+      "name": "chat.turn_total",
+      "started_at": "2026-03-07T13:56:36.939080",
+      "ended_at": null,
+      "duration_ms": null,
+      "attributes": {
+        "entrypoint": "chat"
+      }
+    }
+  ],
+  "events": []
+}
