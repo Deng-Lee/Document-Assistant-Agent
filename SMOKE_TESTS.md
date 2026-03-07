@@ -82,6 +82,7 @@ Notes:
   - retrieval plan construction
   - structured filter path
   - BM25 path
+  - persistent dense vector path
   - RRF fusion
   - Evidence Pack assembly
   - probe stats generation
@@ -128,6 +129,7 @@ Notes:
   - `safe_summary_build`
   - `reindex_doc_version`
   - `reembed_doc_version`
+  - vector-store repopulation for `reembed_doc_version`
   - chunk `safe_summary` update after job execution
 - Result:
   - passed

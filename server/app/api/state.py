@@ -19,6 +19,7 @@ from server.app.orchestrator import ConversationState, OrchestratorService
 from server.app.retrieval import RetrievalService
 from server.app.sft import SFTService
 from server.app.storage import (
+    ChromaVectorStoreAdapter,
     JSONTraceStore,
     LocalFileStore,
     SQLiteJobRepository,
@@ -79,11 +80,13 @@ def create_app_state(root_dir: str | Path) -> AppState:
     job_repository = SQLiteJobRepository(sqlite_store)
     file_store = LocalFileStore(storage_paths.filestore_dir)
     trace_store = JSONTraceStore(storage_paths.traces_dir)
+    vector_store = ChromaVectorStoreAdapter(storage_paths.chroma_dir, collection_name="chunks")
+    vector_store.ensure_collection()
 
     runtime_config = build_runtime_config()
-    retrieval_service = RetrievalService(document_repository)
+    retrieval_service = RetrievalService(document_repository, vector_store=vector_store, runtime_config=runtime_config)
     orchestrator_service = OrchestratorService(retrieval_service, runtime_config=runtime_config)
-    job_service = JobService(document_repository, job_repository, runtime_config=runtime_config)
+    job_service = JobService(document_repository, job_repository, runtime_config=runtime_config, vector_store=vector_store)
 
     return AppState(
         root_dir=root,
@@ -94,7 +97,12 @@ def create_app_state(root_dir: str | Path) -> AppState:
         job_repository=job_repository,
         file_store=file_store,
         trace_store=trace_store,
-        ingestion_service=IngestionService(document_repository, file_store, runtime_config=runtime_config),
+        ingestion_service=IngestionService(
+            document_repository,
+            file_store,
+            runtime_config=runtime_config,
+            vector_store=vector_store,
+        ),
         retrieval_service=retrieval_service,
         orchestrator_service=orchestrator_service,
         job_service=job_service,

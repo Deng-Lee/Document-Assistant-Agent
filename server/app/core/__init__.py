@@ -29,6 +29,7 @@ from .documents import (
     DocumentRecord,
     EmbeddingRecord,
 )
+from .embeddings import DEFAULT_EMBEDDING_DIMENSION, build_text_embedding, cosine_similarity
 from .enums import *
 from .errors import APIErrorDetail, ErrorCode
 from .evaluation import EvalFailure, EvalMetricValue, EvalRunRequest, EvalRunResult, EvalSummary, GoldenCase
@@ -90,6 +91,7 @@ __all__ = [
     "ClarifyRequest",
     "DEFAULT_RUNTIME_CONFIG",
     "DateRange",
+    "DEFAULT_EMBEDDING_DIMENSION",
     "DocVersionRecord",
     "DocumentRecord",
     "EmbeddingRecord",
@@ -137,6 +139,8 @@ __all__ = [
     "TraceSpan",
     "active_model_profile_name",
     "build_runtime_config",
+    "build_text_embedding",
+    "cosine_similarity",
     "export_contract_schemas",
     "get_model_profile",
     "set_active_model_profile",

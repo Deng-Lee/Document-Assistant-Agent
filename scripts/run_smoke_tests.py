@@ -73,6 +73,7 @@ def main() -> None:
     from server.app.retrieval import RetrievalService
     from server.app.sft import SFTService
     from server.app.storage import (
+        ChromaVectorStoreAdapter,
         JSONTraceStore,
         LocalFileStore,
         SQLiteDocumentRepository,
@@ -243,11 +244,12 @@ def main() -> None:
 
         repo2 = SQLiteDocumentRepository(SQLiteStore(root / "sqlite_agents" / "app.db"))
         file_store2 = LocalFileStore(root / "filestore_agents")
-        ingest2 = IngestionService(repo2, file_store2)
+        vector_store2 = ChromaVectorStoreAdapter(root / "chroma_agents", collection_name="chunks")
+        ingest2 = IngestionService(repo2, file_store2, vector_store=vector_store2)
         ingest2.ingest_text(rich_bjj_markdown, source_path_hint="bjj_rich.md")
         ingest2.ingest_text(notes_markdown, source_path_hint="notes_again.md")
 
-        retrieval2 = RetrievalService(repo2)
+        retrieval2 = RetrievalService(repo2, vector_store=vector_store2)
         bjj_outcome = retrieval2.retrieve("turtle 下位 逃脱", mode="full")
         coach = BJJCoachService()
         coach_result = coach.run(
@@ -275,7 +277,7 @@ def main() -> None:
         print("agents_smoke_ok")
 
         job_repo = SQLiteJobRepository(repo2.store)
-        jobs = JobService(repo2, job_repo)
+        jobs = JobService(repo2, job_repo, vector_store=vector_store2)
         first_chunk = repo2.list_chunks()[0]
         repo2.update_chunk_safe_summary(first_chunk.chunk_id, "")
         queued_safe_summary = jobs.enqueue(
@@ -296,6 +298,7 @@ def main() -> None:
         assert repo2.get_chunk(first_chunk.chunk_id).safe_summary
         assert reindex_result.job.status.value == "succeeded"
         assert reembed_result.job.status.value == "succeeded"
+        assert any(note.startswith("reembedded_chunks=") for note in reembed_result.notes)
         print("jobs_smoke_ok")
 
         api_root = root / "api_app"
@@ -343,6 +346,7 @@ def main() -> None:
 
         api_retrieve = _to_dict(api_routes["/api/retrieve"](RetrieveRequest(query_text="maze mirror", mode="full")))
         assert api_retrieve["evidence_pack"]["items"]
+        assert api_retrieve["retrieval_log"]["dense_count"] >= 1
 
         api_chat = _to_dict(api_routes["/api/chat/turn"](ChatTurnRequest(user_message="迷宫和镜子有什么联系？")))
         assert api_chat["response_type"] == "final_answer"

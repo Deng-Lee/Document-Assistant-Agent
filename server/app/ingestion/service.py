@@ -6,7 +6,8 @@ from pathlib import Path
 from uuid import uuid4
 
 from server.app.core import DocVersionRecord, DocumentRecord, RuntimeConfigSnapshot, build_runtime_config
-from server.app.storage import DocumentRepository, FileStore
+from server.app.storage import DocumentRepository, FileStore, VectorStore
+from server.app.storage.vector_indexing import build_embedding_upsert_records
 
 from .chunker import build_chunk_records
 from .loader import MarkdownLoader
@@ -22,10 +23,12 @@ class IngestionService:
         document_repository: DocumentRepository,
         file_store: FileStore,
         runtime_config: RuntimeConfigSnapshot | None = None,
+        vector_store: VectorStore | None = None,
     ):
         self.document_repository = document_repository
         self.file_store = file_store
         self.runtime_config = runtime_config or build_runtime_config()
+        self.vector_store = vector_store
         self.loader = MarkdownLoader()
         self.parser = MarkdownParser()
 
@@ -83,6 +86,9 @@ class IngestionService:
         self.document_repository.insert_doc_version(doc_version)
         for chunk in chunks:
             self.document_repository.insert_chunk(chunk)
+        if self.vector_store is not None:
+            self.vector_store.ensure_collection()
+            self.vector_store.upsert_embeddings(build_embedding_upsert_records(chunks, self.runtime_config))
 
         jobs = [
             IngestionJob(

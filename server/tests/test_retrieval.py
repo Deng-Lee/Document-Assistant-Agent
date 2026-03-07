@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from tempfile import TemporaryDirectory
 
-from server.tests.support import activate_test_profile, build_ingested_stack
+from server.tests.support import activate_test_profile, build_ingested_stack, build_ingested_vector_stack
 
 
 class RetrievalTests(unittest.TestCase):
@@ -40,3 +40,21 @@ class RetrievalTests(unittest.TestCase):
             self.assertEqual(outcome.probe_stats.doc_type_hist["NOTES"], 0)
             self.assertEqual(outcome.retrieval_log.retrieval_plan.filters.position, "turtle")
             self.assertTrue(all(item.metadata_digest.goal == "escape" for item in outcome.items))
+
+    def test_dense_retrieval_contributes_rank_signals(self) -> None:
+        with TemporaryDirectory() as tmp:
+            repo, _file_store, vector_store, _ingestion, _results = build_ingested_vector_stack(
+                tmp,
+                include_bjj=True,
+                include_notes=True,
+            )
+
+            from server.app.retrieval import RetrievalService
+
+            outcome = RetrievalService(repo, vector_store=vector_store).retrieve(
+                query_text="tripod post inside elbow recovery",
+                mode="full",
+            )
+
+            self.assertGreaterEqual(outcome.retrieval_log.dense_count, 1)
+            self.assertTrue(any(item.rank_signals.dense_rank is not None for item in outcome.items))

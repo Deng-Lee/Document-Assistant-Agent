@@ -120,6 +120,24 @@ def build_ingested_stack(root: str | Path, include_bjj: bool = True, include_not
     return repo, file_store, ingestion, results
 
 
+def build_ingested_vector_stack(root: str | Path, include_bjj: bool = True, include_notes: bool = True):
+    activate_test_profile("fake")
+    from server.app.ingestion import IngestionService
+    from server.app.storage import ChromaVectorStoreAdapter, LocalFileStore, SQLiteDocumentRepository, SQLiteStore
+
+    root_path = Path(root)
+    repo = SQLiteDocumentRepository(SQLiteStore(root_path / "sqlite" / "app.db"))
+    file_store = LocalFileStore(root_path / "filestore")
+    vector_store = ChromaVectorStoreAdapter(root_path / "chroma", collection_name="chunks")
+    ingestion = IngestionService(repo, file_store, vector_store=vector_store)
+    results = {}
+    if include_bjj:
+        results["bjj"] = ingestion.ingest_text(sample_bjj_markdown(), source_path_hint="bjj.md")
+    if include_notes:
+        results["notes"] = ingestion.ingest_text(sample_notes_markdown(), source_path_hint="notes.md")
+    return repo, file_store, vector_store, ingestion, results
+
+
 def make_trace_record(
     trace_id: str = "trace_1",
     mode: str = "FULL",

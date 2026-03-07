@@ -17,7 +17,10 @@ from server.app.core import (
     RetrievalFilters,
     RetrievalLog,
     RetrievalPlan,
+    RuntimeConfigSnapshot,
     TimeSignal,
+    build_runtime_config,
+    build_text_embedding,
 )
 from server.app.storage import DocumentRepository, VectorStore
 
@@ -31,9 +34,15 @@ class RetrievalOutcome(EvidencePack):
 
 
 class RetrievalService:
-    def __init__(self, document_repository: DocumentRepository, vector_store: VectorStore | None = None):
+    def __init__(
+        self,
+        document_repository: DocumentRepository,
+        vector_store: VectorStore | None = None,
+        runtime_config: RuntimeConfigSnapshot | None = None,
+    ):
         self.document_repository = document_repository
         self.vector_store = vector_store
+        self.runtime_config = runtime_config or build_runtime_config()
         self.query_parser = QueryParser()
 
     def retrieve(
@@ -52,8 +61,8 @@ class RetrievalService:
 
         structured_hits = self.document_repository.structured_filter_chunks(filter_payload, limit=retrieval_plan.top_k)
         bm25_hits = self._run_bm25(retrieval_plan.query_text, retrieval_plan.top_k, filter_payload)
-        dense_hits: list[ChunkRecord] = []
         dense_enabled = self.vector_store is not None
+        dense_hits = self._run_dense(retrieval_plan.query_text, retrieval_plan.top_k, filter_payload) if dense_enabled else []
 
         fused_ids = reciprocal_rank_fusion(
             [
@@ -100,6 +109,33 @@ class RetrievalService:
             return self.document_repository.bm25_search(sanitized, limit=top_k, filters=filter_payload)
         except Exception:
             return []
+
+    def _run_dense(self, query_text: str, top_k: int, filter_payload: dict[str, object]) -> list[ChunkRecord]:
+        if self.vector_store is None:
+            return []
+        query_vector = build_text_embedding(query_text)
+        if not any(query_vector):
+            return []
+        where = {"embedding_version_id": self.runtime_config.embedding_version_id}
+        for key in ("doc_type", "doc_version_id", "position", "orientation", "distance", "goal", "opponent_control"):
+            value = filter_payload.get(key)
+            if value is None:
+                continue
+            where[key] = value.value if hasattr(value, "value") else str(value)
+        matches = self.vector_store.query(query_vector=query_vector, top_k=max(top_k * 3, top_k), where=where)
+        resolved: list[ChunkRecord] = []
+        seen: set[str] = set()
+        for match in matches:
+            chunk = self.document_repository.get_chunk(match.chunk_id)
+            if chunk is None or chunk.chunk_id in seen:
+                continue
+            if not self._matches_date_range(chunk, filter_payload.get("date_range")):
+                continue
+            resolved.append(chunk)
+            seen.add(chunk.chunk_id)
+            if len(resolved) >= top_k:
+                break
+        return resolved
 
     @staticmethod
     def _filters_to_payload(filters: RetrievalFilters) -> dict[str, object]:
@@ -211,6 +247,21 @@ class RetrievalService:
             ),
             time_signal=TimeSignal(value=filters.date_range is not None, date_range=filters.date_range),
         )
+
+    @staticmethod
+    def _matches_date_range(chunk: ChunkRecord, date_range: dict[str, object] | None) -> bool:
+        if not isinstance(date_range, dict):
+            return True
+        record_date = chunk.metadata_digest.date
+        if record_date is None:
+            return False
+        start = date_range.get("start")
+        end = date_range.get("end")
+        if start and record_date < start:
+            return False
+        if end and record_date > end:
+            return False
+        return True
 
 
 def _slot_histograms(chunks: list[ChunkRecord]) -> dict[str, dict[str, int]]:

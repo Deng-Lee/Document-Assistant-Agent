@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from tempfile import TemporaryDirectory
 
-from server.tests.support import activate_test_profile, build_ingested_stack
+from server.tests.support import activate_test_profile, build_ingested_stack, build_ingested_vector_stack
 
 
 class JobServiceTests(unittest.TestCase):
@@ -46,6 +46,29 @@ class JobServiceTests(unittest.TestCase):
             self.assertEqual(reembed_result.job.status.value, "succeeded")
             self.assertIn("vector_store_unavailable", reembed_result.notes)
 
+    def test_reembed_job_populates_vector_store(self) -> None:
+        with TemporaryDirectory() as tmp:
+            repo, job_repo, vector_store, job_service, chunk = _build_vector_job_stack(tmp)
+
+            reembed_job = job_service.enqueue("reembed_doc_version", {"doc_version_id": chunk.doc_version_id})
+            result = job_service.run_job(reembed_job.job_id)
+
+            self.assertEqual(result.job.status.value, "succeeded")
+            self.assertIn(f"reembedded_chunks={len(repo.list_chunks_for_doc_version(chunk.doc_version_id))}", result.notes)
+
+            from server.app.core.embeddings import build_text_embedding
+
+            matches = vector_store.query(
+                build_text_embedding("tripod post turtle escape"),
+                top_k=5,
+                where={
+                    "doc_version_id": chunk.doc_version_id,
+                    "embedding_version_id": "mock-embedding:v1",
+                },
+            )
+            self.assertTrue(matches)
+            self.assertEqual(matches[0].chunk_id, chunk.chunk_id)
+
 
 def _build_job_stack(root):
     from server.app.jobs import JobService
@@ -56,3 +79,15 @@ def _build_job_stack(root):
     job_repo = SQLiteJobRepository(store)
     chunk = results["bjj"].chunks[0]
     return repo, job_repo, JobService(repo, job_repo), chunk
+
+
+def _build_vector_job_stack(root):
+    from server.app.jobs import JobService
+    from server.app.storage import SQLiteJobRepository
+
+    repo, _file_store, vector_store, _ingestion, results = build_ingested_vector_stack(root, include_bjj=True, include_notes=False)
+    store = repo.store
+    job_repo = SQLiteJobRepository(store)
+    chunk = results["bjj"].chunks[0]
+    vector_store.delete_doc_version(chunk.doc_version_id)
+    return repo, job_repo, vector_store, JobService(repo, job_repo, vector_store=vector_store), chunk

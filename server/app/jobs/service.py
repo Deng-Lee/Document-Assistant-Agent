@@ -6,6 +6,7 @@ from uuid import uuid4
 from server.app.core import JobRecord, JobRunResult, JobStatus, RuntimeConfigSnapshot, build_runtime_config
 from server.app.ingestion.chunker import build_safe_summary_fallback
 from server.app.storage import DocumentRepository, JobRepository, VectorStore
+from server.app.storage.vector_indexing import build_embedding_upsert_records
 
 
 class JobService:
@@ -102,5 +103,11 @@ class JobService:
             raise ValueError("reembed_doc_version requires doc_version_id")
         if self.vector_store is None:
             return ["vector_store_unavailable", f"doc_version_id={doc_version_id}"]
-        return [f"vector_store_ready_for={doc_version_id}"]
-
+        chunks = self.document_repository.list_chunks_for_doc_version(doc_version_id)
+        self.vector_store.ensure_collection()
+        self.vector_store.delete_doc_version(doc_version_id)
+        self.vector_store.upsert_embeddings(build_embedding_upsert_records(chunks, self.runtime_config))
+        return [
+            f"reembedded_chunks={len(chunks)}",
+            f"embedding_version_id={self.runtime_config.embedding_version_id}",
+        ]
