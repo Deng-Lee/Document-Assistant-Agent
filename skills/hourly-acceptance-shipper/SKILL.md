@@ -101,6 +101,7 @@ If verification fails:
 
 When a stage is green:
 
+- if stage acceptance, tests, and smoke all pass and there is no blocker, execute `git add`, `git commit`, and `git push` directly without asking for extra user confirmation
 - use the one-line stage text as the commit message exactly
 - do not prepend ticket ids, prefixes, or extra commentary unless the user explicitly asked for them
 - commit only the completed stage
@@ -119,10 +120,14 @@ Use this sequence:
 
 Do not reorder or skip this sequence unless the user explicitly overrides it.
 
-If push is blocked by sandbox, auth, remote policy, or missing upstream:
+If any of `git add`, `git commit`, or `git push` requires permission elevation:
 
-- request the minimum approval needed when the environment supports it
-- otherwise stop and report the exact push blocker
+- stop automatic execution
+- send a user message asking for confirmation before attempting the elevated git action
+
+If push is blocked by auth, remote policy, or missing upstream:
+
+- stop and report the exact push blocker
 - do not silently skip the push if the user asked for remote shipping
 
 ### 6) Automatic continuation
