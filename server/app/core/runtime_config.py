@@ -4,6 +4,7 @@ from pydantic import Field
 
 from .base import PDABaseModel
 from .enums import PolicyVersion, TraceCaptureLevel
+from .model_profiles import ModelProfileSettings, active_model_profile_name, get_model_profile
 
 
 class PromptVersions(PDABaseModel):
@@ -44,15 +45,23 @@ class BJJGateThresholds(PDABaseModel):
 
 
 class ModelRoutingConfig(PDABaseModel):
+    profile_name: str = "fake"
     provider: str = "openai"
     base_model: str = "gpt-4.1-mini"
     policy_model: str = "policy://pending"
     embedding_model: str = "text-embedding-3-large"
 
 
+class GenerationConfig(PDABaseModel):
+    bjj: dict[str, float | int] = Field(default_factory=dict)
+    literary: dict[str, float | int] = Field(default_factory=dict)
+    replan: dict[str, float | int] = Field(default_factory=dict)
+    safe_summary: dict[str, float | int] = Field(default_factory=dict)
+
+
 class RuntimeConfigSnapshot(PDABaseModel):
     doc_version_ids: list[str] = Field(default_factory=list)
-    embedding_version_id: str = "text-embedding-3-large:default"
+    embedding_version_id: str = Field(default_factory=lambda: get_model_profile().embedding_version_id)
     prompt_versions: PromptVersions = Field(default_factory=PromptVersions)
     policy_version: PolicyVersion = PolicyVersion.BASE
     profile_version_id: str | None = None
@@ -60,7 +69,37 @@ class RuntimeConfigSnapshot(PDABaseModel):
     retrieval: RetrievalLimits = Field(default_factory=RetrievalLimits)
     orchestrator: OrchestratorThresholds = Field(default_factory=OrchestratorThresholds)
     bjj_gate: BJJGateThresholds = Field(default_factory=BJJGateThresholds)
-    model_routing: ModelRoutingConfig = Field(default_factory=ModelRoutingConfig)
+    model_routing: ModelRoutingConfig = Field(default_factory=lambda: _model_routing_from_profile(get_model_profile()))
+    generation: GenerationConfig = Field(default_factory=lambda: _generation_config_from_profile(get_model_profile()))
+
+def build_runtime_config(profile_name: str | None = None) -> RuntimeConfigSnapshot:
+    profile = get_model_profile(profile_name)
+    return RuntimeConfigSnapshot(
+        embedding_version_id=profile.embedding_version_id,
+        model_routing=_model_routing_from_profile(profile),
+        generation=_generation_config_from_profile(profile),
+    )
 
 
-DEFAULT_RUNTIME_CONFIG = RuntimeConfigSnapshot()
+def _model_routing_from_profile(profile: ModelProfileSettings) -> ModelRoutingConfig:
+    return ModelRoutingConfig(
+        profile_name=profile.name,
+        provider=profile.provider,
+        base_model=profile.base_model,
+        policy_model=profile.policy_model,
+        embedding_model=profile.embedding_model,
+    )
+
+
+def _generation_config_from_profile(profile: ModelProfileSettings) -> GenerationConfig:
+    generation = profile.generation
+    dump = lambda model: model.model_dump() if hasattr(model, "model_dump") else model.dict()
+    return GenerationConfig(
+        bjj=dump(generation.bjj),
+        literary=dump(generation.literary),
+        replan=dump(generation.replan),
+        safe_summary=dump(generation.safe_summary),
+    )
+
+
+DEFAULT_RUNTIME_CONFIG = build_runtime_config(active_model_profile_name())

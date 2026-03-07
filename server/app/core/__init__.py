@@ -21,6 +21,7 @@ from .errors import APIErrorDetail, ErrorCode
 from .evaluation import EvalRunRequest, EvalRunResult, GoldenCase
 from .evidence import EvidencePack, EvidencePackItem, RankSignals
 from .locators import CharRange, LineRange, LocatorIndex, SourceLocator
+from .model_profiles import MODEL_PROFILE_ENV, active_model_profile_name, get_model_profile, set_active_model_profile
 from .profile import ProfileConstraint, ProfileSummary
 from .retrieval import (
     ClarifyDirective,
@@ -35,7 +36,7 @@ from .retrieval import (
     RetrievalPlan,
     TimeSignal,
 )
-from .runtime_config import DEFAULT_RUNTIME_CONFIG, RuntimeConfigSnapshot
+from .runtime_config import DEFAULT_RUNTIME_CONFIG, RuntimeConfigSnapshot, build_runtime_config
 from .schema_registry import export_contract_schemas
 from .sft import PolicyTrainRequest, SFTDatasetManifest, SFTExportRequest, SFTExportSample
 from .tracing import (
@@ -82,6 +83,7 @@ __all__ = [
     "LiteraryAnchor",
     "LiteraryFinalAnswer",
     "LocatorIndex",
+    "MODEL_PROFILE_ENV",
     "PDABaseModel",
     "PlanCheck",
     "PolicyTrainRequest",
@@ -103,5 +105,9 @@ __all__ = [
     "TraceEvent",
     "TraceRecord",
     "TraceSpan",
+    "active_model_profile_name",
+    "build_runtime_config",
     "export_contract_schemas",
+    "get_model_profile",
+    "set_active_model_profile",
 ]
