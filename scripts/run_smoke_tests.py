@@ -40,6 +40,7 @@ def main() -> None:
         GenerationLog,
         LineRange,
         Orientation,
+        ProfileSummary,
         RequestLog,
         RetrievalLog,
         RuntimeConfigSnapshot,
@@ -48,6 +49,8 @@ def main() -> None:
         active_model_profile_name,
         export_contract_schemas,
     )
+    from server.app.agents import BJJCoachService, LiteraryService
+    from server.app.agents.bjj_coach.types import BJJCoachInput
     from server.app.ingestion import IngestionService
     from server.app.orchestrator import ConversationState, OrchestratorService
     from server.app.retrieval import RetrievalService
@@ -192,6 +195,59 @@ def main() -> None:
         assert follow_up.session_state.pending_slot is None
         assert follow_up.execution_plan.next_action.value in {"RETRIEVE", "CLARIFY"}
         print("orchestrator_smoke_ok")
+
+        rich_bjj_markdown = """---\n"""
+        rich_bjj_markdown += "type: BJJ\n"
+        rich_bjj_markdown += "title: Rich Training Log\n"
+        rich_bjj_markdown += "---\n\n"
+        for day, action, response, adjustment, note in (
+            ("2026-03-04", "tripod post", "pulled me back to turtle", "inside elbow recovery", "head position was late"),
+            ("2026-03-05", "elbow-knee frame", "chased back exposure", "hip angle reset", "needed earlier head position"),
+            ("2026-03-06", "hand fight first", "stayed heavy on top", "return to base", "success improved"),
+        ):
+            rich_bjj_markdown += f"## {day}\n"
+            rich_bjj_markdown += "- position: turtle\n"
+            rich_bjj_markdown += "- orientation: 下位\n"
+            rich_bjj_markdown += "- distance: 近距离\n"
+            rich_bjj_markdown += "- goal: escape\n"
+            rich_bjj_markdown += f"- your_action: {action}\n"
+            rich_bjj_markdown += f"- opponent_response: {response}\n"
+            rich_bjj_markdown += "- opponent_control: 袖子\n"
+            rich_bjj_markdown += f"- your_adjustment: {adjustment}\n"
+            rich_bjj_markdown += f"- notes: {note}\n\n"
+
+        repo2 = SQLiteDocumentRepository(SQLiteStore(root / "sqlite_agents" / "app.db"))
+        file_store2 = LocalFileStore(root / "filestore_agents")
+        ingest2 = IngestionService(repo2, file_store2)
+        ingest2.ingest_text(rich_bjj_markdown, source_path_hint="bjj_rich.md")
+        ingest2.ingest_text(notes_markdown, source_path_hint="notes_again.md")
+
+        retrieval2 = RetrievalService(repo2)
+        bjj_outcome = retrieval2.retrieve("turtle 下位 逃脱", mode="full")
+        coach = BJJCoachService()
+        coach_result = coach.run(
+            BJJCoachInput(
+                query_original="turtle 下位怎么逃脱？",
+                query_clean="turtle 下位 怎么 逃脱",
+                confirmed_slots={
+                    "position": "turtle",
+                    "orientation": "下位",
+                    "goal": "escape",
+                    "opponent_control": "袖子",
+                },
+                profile_summary=ProfileSummary(profile_version_id="profile_1"),
+            ),
+            evidence_pack=EvidencePack(items=bjj_outcome.items),
+        )
+        assert coach_result.final_answer is not None
+        assert coach_result.validator_report.validator_pass is True
+
+        notes_outcome = retrieval2.retrieve("迷宫和镜子", mode="full")
+        literary = LiteraryService()
+        literary_result = literary.run("迷宫和镜子", EvidencePack(items=notes_outcome.items))
+        assert literary_result.anchors
+        assert "迷宫和镜子" in literary_result.text
+        print("agents_smoke_ok")
 
     print("all_smoke_tests_ok")
 

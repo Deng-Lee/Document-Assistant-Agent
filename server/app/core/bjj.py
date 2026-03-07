@@ -40,10 +40,14 @@ class BJJPlanBranch(PDABaseModel):
     generic: bool = False
 
 
+class BJJBranchPlan(PDABaseModel):
+    branches: list[BJJPlanBranch] = Field(default_factory=list)
+
+
 class BJJPlanCollection(PDABaseModel):
     A_baseline: BJJPlanBlock = Field(default_factory=BJJPlanBlock)
     B_offense: BJJPlanBlock = Field(default_factory=BJJPlanBlock)
-    C_branch: list[BJJPlanBranch] = Field(default_factory=list)
+    C_branch: BJJBranchPlan = Field(default_factory=BJJBranchPlan)
 
 
 class BJJMistake(PDABaseModel):

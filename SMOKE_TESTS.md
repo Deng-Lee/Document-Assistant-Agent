@@ -101,6 +101,21 @@ Notes:
 - Result:
   - passed
 
+### 2026-03-07: Agents Smoke
+- Modules:
+  - `server/app/agents/bjj_coach`
+  - `server/app/agents/literary`
+  - `server/app/retrieval`
+- Goal:
+  - verify BJJ coach and literary agent both produce terminal outputs against real repository contracts
+- Coverage:
+  - BJJ gate and deterministic final answer generation
+  - BJJ validator pass path
+  - literary anchor selection
+  - literary final answer generation
+- Result:
+  - passed
+
 ## Maintenance Rule
 - If a smoke test is replaced, this document must note:
   - what changed
