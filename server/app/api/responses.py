@@ -25,11 +25,27 @@ class HealthResponse(PDABaseModel):
     status: str
 
 
-class IngestTextResponse(PDABaseModel):
+class IngestArtifactResponse(PDABaseModel):
+    source_path: str | None = None
     doc_id: str
     doc_version_id: str
     chunk_ids: list[str] = Field(default_factory=list)
     jobs: list[JobRecord] = Field(default_factory=list)
+
+
+class IngestTextResponse(IngestArtifactResponse):
+    pass
+
+
+class IngestFileResponse(IngestArtifactResponse):
+    pass
+
+
+class IngestDirectoryResponse(PDABaseModel):
+    root_path: str
+    recursive: bool
+    imported_count: int
+    results: list[IngestArtifactResponse] = Field(default_factory=list)
 
 
 class RecordBJJResponse(PDABaseModel):

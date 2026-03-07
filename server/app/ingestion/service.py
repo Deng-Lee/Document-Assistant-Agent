@@ -15,6 +15,8 @@ from .types import IngestionJob, IngestionResult
 
 
 class IngestionService:
+    MARKDOWN_SUFFIXES = {".md", ".markdown"}
+
     def __init__(
         self,
         document_repository: DocumentRepository,
@@ -31,9 +33,26 @@ class IngestionService:
         loaded = self.loader.load_file(path)
         return self._ingest_loaded(loaded, doc_id=doc_id)
 
+    def ingest_directory(self, path: str | Path, recursive: bool = True) -> list[IngestionResult]:
+        return [self.ingest_file(file_path) for file_path in self.discover_markdown_files(path, recursive=recursive)]
+
     def ingest_text(self, raw_text: str, source_path_hint: str | None = None, doc_id: str | None = None) -> IngestionResult:
         loaded = self.loader.load_text(raw_text, source_path=source_path_hint)
         return self._ingest_loaded(loaded, doc_id=doc_id)
+
+    @classmethod
+    def discover_markdown_files(cls, path: str | Path, recursive: bool = True) -> list[Path]:
+        root = Path(path).expanduser()
+        if not root.exists():
+            raise FileNotFoundError(f"ingest path does not exist: {root}")
+        if not root.is_dir():
+            raise NotADirectoryError(f"ingest path is not a directory: {root}")
+        iterator = root.rglob("*") if recursive else root.glob("*")
+        return sorted(
+            candidate
+            for candidate in iterator
+            if candidate.is_file() and candidate.suffix.lower() in cls.MARKDOWN_SUFFIXES
+        )
 
     def _ingest_loaded(self, loaded, doc_id: str | None = None) -> IngestionResult:
         parsed = self.parser.parse(loaded)

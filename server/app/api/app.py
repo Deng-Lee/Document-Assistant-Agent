@@ -33,6 +33,8 @@ from .models import (
     BJJRecordRequest,
     ChatTurnRequest,
     EvalRunAPIRequest,
+    IngestDirRequest,
+    IngestFileRequest,
     IngestTextRequest,
     NotesRecordRequest,
     ProfilePatchRequest,
@@ -45,6 +47,8 @@ from .responses import (
     EvalResultsResponse,
     EvalRunLaunchResponse,
     HealthResponse,
+    IngestDirectoryResponse,
+    IngestFileResponse,
     IngestTextResponse,
     JobsListResponse,
     ProfileResponse,
@@ -78,11 +82,34 @@ def create_app(root_dir: str | Path | None = None) -> FastAPI:
             doc_id=request.doc_id,
         )
         stored_jobs = _store_jobs(state, result.jobs)
-        return IngestTextResponse(
-            doc_id=result.document.doc_id,
-            doc_version_id=result.doc_version.doc_version_id,
-            chunk_ids=[chunk.chunk_id for chunk in result.chunks],
-            jobs=stored_jobs,
+        return IngestTextResponse(**_build_ingest_payload(result, stored_jobs))
+
+    @app.post("/api/ingest/file", response_model=IngestFileResponse)
+    def ingest_file(request: IngestFileRequest) -> IngestFileResponse:
+        state = _state(app)
+        resolved_path = _resolve_input_path(state.root_dir, request.path, must_be_dir=False)
+        result = state.ingestion_service.ingest_file(resolved_path, doc_id=request.doc_id)
+        stored_jobs = _store_jobs(state, result.jobs)
+        return IngestFileResponse(**_build_ingest_payload(result, stored_jobs))
+
+    @app.post("/api/ingest/dir", response_model=IngestDirectoryResponse)
+    def ingest_dir(request: IngestDirRequest) -> IngestDirectoryResponse:
+        state = _state(app)
+        resolved_path = _resolve_input_path(state.root_dir, request.path, must_be_dir=True)
+        results = state.ingestion_service.ingest_directory(resolved_path, recursive=request.recursive)
+        payloads = []
+        for result in results:
+            payloads.append(
+                _build_ingest_payload(
+                    result,
+                    _store_jobs(state, result.jobs),
+                )
+            )
+        return IngestDirectoryResponse(
+            root_path=str(resolved_path),
+            recursive=request.recursive,
+            imported_count=len(payloads),
+            results=payloads,
         )
 
     @app.post("/api/record/bjj", response_model=RecordBJJResponse)
@@ -466,3 +493,28 @@ def _store_jobs(state: AppState, jobs) -> list:
         state.job_service.enqueue(job_type=job.job_type, payload=job.payload, job_id=job.job_id)
         for job in jobs
     ]
+
+
+def _build_ingest_payload(result, stored_jobs) -> dict:
+    source_path = result.chunks[0].locator.source_path if result.chunks else None
+    return {
+        "source_path": source_path,
+        "doc_id": result.document.doc_id,
+        "doc_version_id": result.doc_version.doc_version_id,
+        "chunk_ids": [chunk.chunk_id for chunk in result.chunks],
+        "jobs": stored_jobs,
+    }
+
+
+def _resolve_input_path(root_dir: str | Path, raw_path: str, must_be_dir: bool) -> Path:
+    candidate = Path(raw_path).expanduser()
+    if not candidate.is_absolute():
+        candidate = Path(root_dir) / candidate
+    resolved = candidate.resolve()
+    if not resolved.exists():
+        raise HTTPException(status_code=404, detail=f"path not found: {resolved}")
+    if must_be_dir and not resolved.is_dir():
+        raise HTTPException(status_code=400, detail=f"expected directory path: {resolved}")
+    if not must_be_dir and not resolved.is_file():
+        raise HTTPException(status_code=400, detail=f"expected file path: {resolved}")
+    return resolved

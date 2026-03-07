@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 from tempfile import TemporaryDirectory
+from pathlib import Path
 
 from server.tests.support import create_test_app, dump_result, endpoint_map, sample_bjj_markdown, sample_notes_markdown
 
@@ -30,6 +31,37 @@ class APITests(unittest.TestCase):
 
             retrieve_payload = dump_result(routes["/api/retrieve"](RetrieveRequest(query_text="maze mirror", mode="full")))
             self.assertGreaterEqual(len(retrieve_payload["evidence_pack"]["items"]), 1)
+
+    def test_ingest_file_and_directory_endpoints(self) -> None:
+        with TemporaryDirectory() as tmp:
+            app = create_test_app(tmp)
+            routes = endpoint_map(app)
+
+            import_root = Path(tmp) / "imports"
+            nested_root = import_root / "nested"
+            nested_root.mkdir(parents=True)
+            notes_path = import_root / "notes.md"
+            bjj_path = nested_root / "bjj.markdown"
+            ignored_path = import_root / "ignore.txt"
+            notes_path.write_text(sample_notes_markdown(), encoding="utf-8")
+            bjj_path.write_text(sample_bjj_markdown(), encoding="utf-8")
+            ignored_path.write_text("ignore me", encoding="utf-8")
+
+            from server.app.api.models import IngestDirRequest, IngestFileRequest
+
+            file_payload = dump_result(routes["/api/ingest/file"](IngestFileRequest(path="imports/notes.md")))
+            self.assertEqual(file_payload["source_path"], str(notes_path.resolve()))
+            self.assertTrue(file_payload["chunk_ids"])
+            self.assertTrue(file_payload["jobs"])
+
+            dir_payload = dump_result(routes["/api/ingest/dir"](IngestDirRequest(path="imports")))
+            self.assertEqual(dir_payload["root_path"], str(import_root.resolve()))
+            self.assertEqual(dir_payload["imported_count"], 2)
+            self.assertEqual(
+                [item["source_path"] for item in dir_payload["results"]],
+                sorted([str(notes_path.resolve()), str(bjj_path.resolve())]),
+            )
+            self.assertTrue(all(item["jobs"] for item in dir_payload["results"]))
 
     def test_chat_turn_persists_conversation_state(self) -> None:
         with TemporaryDirectory() as tmp:

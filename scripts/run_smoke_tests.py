@@ -58,6 +58,8 @@ def main() -> None:
     from server.app.api.models import (
         ChatTurnRequest,
         EvalRunAPIRequest,
+        IngestDirRequest,
+        IngestFileRequest,
         IngestTextRequest,
         ReplayRequest,
         RetrieveRequest,
@@ -319,6 +321,25 @@ def main() -> None:
         assert api_ingest["doc_id"]
         assert api_ingest["chunk_ids"]
         assert api_ingest["jobs"]
+
+        imports_root = api_root / "imports"
+        nested_imports = imports_root / "nested"
+        nested_imports.mkdir(parents=True, exist_ok=True)
+        file_ingest_path = imports_root / "api_notes.md"
+        dir_ingest_path = nested_imports / "api_bjj.markdown"
+        file_ingest_path.write_text(notes_markdown, encoding="utf-8")
+        dir_ingest_path.write_text(bjj_markdown, encoding="utf-8")
+
+        api_ingest_file = _to_dict(api_routes["/api/ingest/file"](IngestFileRequest(path="imports/api_notes.md")))
+        assert api_ingest_file["source_path"] == str(file_ingest_path.resolve())
+        assert api_ingest_file["chunk_ids"]
+
+        api_ingest_dir = _to_dict(api_routes["/api/ingest/dir"](IngestDirRequest(path="imports")))
+        assert api_ingest_dir["imported_count"] == 2
+        assert [item["source_path"] for item in api_ingest_dir["results"]] == [
+            str(file_ingest_path.resolve()),
+            str(dir_ingest_path.resolve()),
+        ]
 
         api_retrieve = _to_dict(api_routes["/api/retrieve"](RetrieveRequest(query_text="maze mirror", mode="full")))
         assert api_retrieve["evidence_pack"]["items"]

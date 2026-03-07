@@ -145,6 +145,8 @@ Notes:
   - app creation and route registration
   - `/api/health`
   - `/api/ingest/text`
+  - `/api/ingest/file`
+  - `/api/ingest/dir`
   - `/api/jobs`
   - `/api/jobs/run-next`
   - `/api/retrieve`

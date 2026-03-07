@@ -44,6 +44,16 @@ class IngestTextRequest(PDABaseModel):
     doc_id: str | None = None
 
 
+class IngestFileRequest(PDABaseModel):
+    path: str
+    doc_id: str | None = None
+
+
+class IngestDirRequest(PDABaseModel):
+    path: str
+    recursive: bool = True
+
+
 class EvalRunAPIRequest(PDABaseModel):
     eval_set_id: str
     model_variant: str = "base"
