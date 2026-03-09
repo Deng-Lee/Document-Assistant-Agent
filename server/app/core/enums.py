@@ -132,3 +132,14 @@ class EvalMetricName(str, Enum):
 class ModelVariant(str, Enum):
     BASE = "base"
     POLICY = "policy"
+
+
+class EvalRunStatus(str, Enum):
+    COMPLETED = "completed"
+    PARTIAL = "partial"
+
+
+class EvalStageStatus(str, Enum):
+    SUCCEEDED = "succeeded"
+    SKIPPED = "skipped"
+    FAILED = "failed"

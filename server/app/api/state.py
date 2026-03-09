@@ -108,7 +108,11 @@ def create_app_state(root_dir: str | Path) -> AppState:
         job_service=job_service,
         bjj_coach_service=BJJCoachService(runtime_config=runtime_config),
         literary_service=LiteraryService(),
-        evaluation_service=EvaluationService(trace_store=trace_store, golden_case_repository=golden_case_repository),
+        evaluation_service=EvaluationService(
+            trace_store=trace_store,
+            golden_case_repository=golden_case_repository,
+            repo_root=root,
+        ),
         sft_service=SFTService(trace_store=trace_store),
         current_profile=ProfileSummary(profile_version_id="profile_default"),
     )

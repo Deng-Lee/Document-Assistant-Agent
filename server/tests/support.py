@@ -150,7 +150,6 @@ def make_trace_record(
     latency_ms: int | None = None,
     cost_estimate: float | None = None,
 ):
-    activate_test_profile("fake")
     from server.app.core import (
         BJJAssumptions,
         BJJBranchPlan,

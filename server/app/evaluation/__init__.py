@@ -1,4 +1,5 @@
+from .loader import load_golden_cases
 from .metrics import compute_eval_metrics
 from .service import EvaluationService
 
-__all__ = ["EvaluationService", "compute_eval_metrics"]
+__all__ = ["EvaluationService", "compute_eval_metrics", "load_golden_cases"]

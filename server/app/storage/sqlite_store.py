@@ -35,7 +35,13 @@ class SQLiteStore:
         with self.connect() as connection:
             for statement in ALL_SQLITE_STATEMENTS:
                 connection.execute(statement)
+            self._run_lightweight_migrations(connection)
             connection.commit()
+
+    @staticmethod
+    def _run_lightweight_migrations(connection: sqlite3.Connection) -> None:
+        _ensure_column(connection, "golden_cases", "trace_id", "TEXT")
+        _ensure_column(connection, "eval_runs", "result_json", "TEXT")
 
 
 class SQLiteDocumentRepository:
@@ -265,13 +271,14 @@ class SQLiteGoldenCaseRepository:
             connection.execute(
                 """
                 INSERT OR REPLACE INTO golden_cases
-                (case_id, query, domain, expected_behavior_json, expected_chunk_ids_json)
-                VALUES (:case_id, :query, :domain, :expected_behavior_json, :expected_chunk_ids_json)
+                (case_id, query, domain, trace_id, expected_behavior_json, expected_chunk_ids_json)
+                VALUES (:case_id, :query, :domain, :trace_id, :expected_behavior_json, :expected_chunk_ids_json)
                 """,
                 {
                     "case_id": payload["case_id"],
                     "query": payload["query"],
                     "domain": payload["domain"],
+                    "trace_id": payload.get("trace_id"),
                     "expected_behavior_json": model_to_json(case.expected_behavior),
                     "expected_chunk_ids_json": model_to_json(case.expected_chunk_ids),
                 },
@@ -282,7 +289,7 @@ class SQLiteGoldenCaseRepository:
         with self.store.connect() as connection:
             rows = connection.execute(
                 """
-                SELECT case_id, query, domain, expected_behavior_json, expected_chunk_ids_json
+                SELECT case_id, query, domain, trace_id, expected_behavior_json, expected_chunk_ids_json
                 FROM golden_cases
                 ORDER BY case_id
                 """
@@ -292,6 +299,7 @@ class SQLiteGoldenCaseRepository:
                 case_id=row["case_id"],
                 query=row["query"],
                 domain=row["domain"],
+                trace_id=row["trace_id"],
                 expected_behavior=parse_json_blob(row["expected_behavior_json"]),
                 expected_chunk_ids=parse_json_blob(row["expected_chunk_ids_json"]),
             )
@@ -303,8 +311,8 @@ class SQLiteGoldenCaseRepository:
             connection.execute(
                 """
                 INSERT OR REPLACE INTO eval_runs
-                (eval_run_id, eval_set_id, model_variant, created_at, metrics_json, failures_json)
-                VALUES (:eval_run_id, :eval_set_id, :model_variant, :created_at, :metrics_json, :failures_json)
+                (eval_run_id, eval_set_id, model_variant, created_at, metrics_json, failures_json, result_json)
+                VALUES (:eval_run_id, :eval_set_id, :model_variant, :created_at, :metrics_json, :failures_json, :result_json)
                 """,
                 {
                     "eval_run_id": result.eval_run_id,
@@ -313,6 +321,7 @@ class SQLiteGoldenCaseRepository:
                     "created_at": result.created_at.isoformat(),
                     "metrics_json": model_to_json(result.metrics),
                     "failures_json": model_to_json(result.failures),
+                    "result_json": model_to_json(result),
                 },
             )
             connection.commit()
@@ -321,13 +330,17 @@ class SQLiteGoldenCaseRepository:
         with self.store.connect() as connection:
             rows = connection.execute(
                 """
-                SELECT eval_run_id, eval_set_id, model_variant, created_at, metrics_json, failures_json
+                SELECT eval_run_id, eval_set_id, model_variant, created_at, metrics_json, failures_json, result_json
                 FROM eval_runs
                 ORDER BY created_at DESC
                 """
             ).fetchall()
         results: list[EvalRunResult] = []
         for row in rows:
+            result_payload = parse_json_blob(row["result_json"]) if row["result_json"] else None
+            if result_payload:
+                results.append(EvalRunResult(**result_payload))
+                continue
             metrics_payload = parse_json_blob(row["metrics_json"]) or []
             failures_payload = parse_json_blob(row["failures_json"]) or []
             results.append(
@@ -341,6 +354,13 @@ class SQLiteGoldenCaseRepository:
                 )
             )
         return results
+
+
+def _ensure_column(connection: sqlite3.Connection, table_name: str, column_name: str, column_sql: str) -> None:
+    rows = connection.execute(f"PRAGMA table_info({table_name})").fetchall()
+    known = {row["name"] for row in rows}
+    if column_name not in known:
+        connection.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_sql}")
 
 
 class SQLiteJobRepository:

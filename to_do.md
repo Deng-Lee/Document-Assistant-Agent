@@ -153,9 +153,9 @@
 - 输出 trace-linked 失败钻取视图
 
 ### 建议讨论点
-- V1 是否允许 RAGAS/judge 仅在 real profile 下启用
-- judge 失败时是否阻塞 eval run，还是降级为 partial result
-- golden set 是先走 repo 文件，还是 API 管理
+- 已确认：V1 允许 RAGAS/judge 仅在 `real` profile 下启用；`fake` profile 下统一跳过，并返回结构化 skip 原因
+- 已确认：judge 失败不阻塞 eval run，而是降级为 partial result，并结构化记录失败原因与 run 状态
+- 已确认：V1 golden set 先走 repo 文件；API 管理延后
 
 ---
 

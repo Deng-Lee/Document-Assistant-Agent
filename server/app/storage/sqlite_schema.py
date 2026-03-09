@@ -84,6 +84,7 @@ CREATE TABLE IF NOT EXISTS golden_cases (
     case_id TEXT PRIMARY KEY,
     query TEXT NOT NULL,
     domain TEXT NOT NULL,
+    trace_id TEXT,
     expected_behavior_json TEXT NOT NULL,
     expected_chunk_ids_json TEXT NOT NULL
 );
@@ -97,7 +98,8 @@ CREATE TABLE IF NOT EXISTS eval_runs (
     model_variant TEXT NOT NULL,
     created_at TEXT NOT NULL,
     metrics_json TEXT NOT NULL,
-    failures_json TEXT NOT NULL
+    failures_json TEXT NOT NULL,
+    result_json TEXT
 );
 """
 

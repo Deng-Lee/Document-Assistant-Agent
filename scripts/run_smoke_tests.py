@@ -488,12 +488,26 @@ def main() -> None:
         print("observability_smoke_ok")
 
         eval_repo = SQLiteGoldenCaseRepository(repo2.store)
-        evaluation = EvaluationService(trace_store=trace_store2, golden_case_repository=eval_repo)
+        golden_dir = root / "datasets" / "golden"
+        golden_dir.mkdir(parents=True, exist_ok=True)
+        (golden_dir / "smoke_eval.jsonl").write_text(
+            (
+                '{"case_id":"smoke_case","query":"turtle escape","domain":"BJJ","trace_id":"'
+                + recorder.trace_id
+                + '","expected_behavior":{"required_mode":"FULL","min_citation_count":1},"expected_chunk_ids":["'
+                + bjj_outcome.items[0].evidence_id
+                + '"]}\n'
+            ),
+            encoding="utf-8",
+        )
+        evaluation = EvaluationService(trace_store=trace_store2, golden_case_repository=eval_repo, repo_root=root)
         eval_result = evaluation.run(
             EvalRunRequest(eval_set_id="smoke_eval", model_variant=ModelVariant.BASE),
-            trace_ids=[recorder.trace_id],
         )
         assert eval_result.metrics
+        assert eval_result.golden_case_count == 1
+        assert eval_result.ragas.status.value == "skipped"
+        assert eval_result.judge.status.value == "skipped"
         assert evaluation.list_results()
         print("evaluation_smoke_ok")
 
