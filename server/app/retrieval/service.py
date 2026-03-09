@@ -191,6 +191,7 @@ class RetrievalService:
                 doc_version_id=chunk.doc_version_id,
                 locator=chunk.locator,
                 safe_summary=chunk.safe_summary or "",
+                excerpt_snapshot=(chunk.clean_search_text or "")[:240] or None,
                 metadata_digest=chunk.metadata_digest,
                 rank_signals=RankSignals(
                     structured_filter_applied=chunk.chunk_id in structured_ranks,

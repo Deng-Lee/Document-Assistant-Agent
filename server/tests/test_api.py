@@ -200,6 +200,10 @@ class APITests(unittest.TestCase):
 
             trace_payload = dump_result(routes["/api/traces/{trace_id}"](trace_id))
             self.assertEqual(trace_payload["trace_id"], trace_id)
+            self.assertTrue(trace_payload["generation_log"]["prompt_hash"])
+            self.assertTrue(trace_payload["generation_log"]["input_snapshot"])
+            self.assertIn("query_original", trace_payload["generation_log"]["input_snapshot"])
+            self.assertIsNone(trace_payload["generation_log"]["prompt_snapshot"]["query_original_preview"])
 
             replay_payload = dump_result(routes["/api/replay/{trace_id}"](trace_id, ReplayRequest()))
             self.assertTrue(replay_payload["trace_id"])

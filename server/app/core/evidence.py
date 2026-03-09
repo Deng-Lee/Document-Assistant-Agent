@@ -20,6 +20,7 @@ class EvidencePackItem(PDABaseModel):
     doc_version_id: str
     locator: SourceLocator
     safe_summary: str
+    excerpt_snapshot: str | None = None
     metadata_digest: ChunkMetadataDigest
     rank_signals: RankSignals
 

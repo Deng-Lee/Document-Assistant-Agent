@@ -29,7 +29,11 @@ from server.app.core import (
     TraceEvent,
     TraceRecord,
 )
-from server.app.observability import TraceRecorder
+from server.app.observability import (
+    TraceRecorder,
+    build_generation_input_snapshot as build_trace_generation_input_snapshot,
+    build_prompt_snapshot as build_trace_prompt_snapshot,
+)
 
 from .models import (
     BJJRecordRequest,
@@ -215,11 +219,22 @@ def create_app(root_dir: str | Path | None = None) -> FastAPI:
                     round=conversation.state.clarify_round,
                     why="检测到写入意图，建议改走 record 入口。",
                 )
+                clarify_input = _build_generation_input_snapshot(
+                    task=orchestrator_outcome.execution_plan.task.value,
+                    query_original=request.user_message,
+                    query_clean=request.user_message.strip(),
+                    confirmed_slots=conversation.state.slots,
+                    coach_clarify_round=conversation.state.coach_clarify_round,
+                    coach_pending_slot=conversation.state.coach_pending_slot,
+                    profile_summary=state.current_profile,
+                )
                 recorder.set_generation_log(
                     GenerationLog(
                         provider=state.runtime_config.model_routing.provider,
                         model=state.runtime_config.model_routing.base_model,
                         prompt_version=state.runtime_config.prompt_versions.replan,
+                        prompt_snapshot=build_trace_prompt_snapshot(clarify_input),
+                        input_snapshot=clarify_input,
                         output=_dump(clarify),
                     )
                 )
@@ -248,11 +263,22 @@ def create_app(root_dir: str | Path | None = None) -> FastAPI:
                     slot=clarify.slot.value,
                     round=clarify.round,
                 )
+                clarify_input = _build_generation_input_snapshot(
+                    task=orchestrator_outcome.execution_plan.task.value,
+                    query_original=request.user_message,
+                    query_clean=request.user_message.strip(),
+                    confirmed_slots=conversation.state.slots,
+                    coach_clarify_round=conversation.state.coach_clarify_round,
+                    coach_pending_slot=conversation.state.coach_pending_slot,
+                    profile_summary=state.current_profile,
+                )
                 recorder.set_generation_log(
                     GenerationLog(
                         provider=state.runtime_config.model_routing.provider,
                         model=state.runtime_config.model_routing.base_model,
                         prompt_version=state.runtime_config.prompt_versions.replan,
+                        prompt_snapshot=build_trace_prompt_snapshot(clarify_input),
+                        input_snapshot=clarify_input,
                         output=_dump(clarify),
                     )
                 )
@@ -277,21 +303,41 @@ def create_app(root_dir: str | Path | None = None) -> FastAPI:
 
             final_payload = None
             validator_report = None
+            input_snapshot = _build_generation_input_snapshot(
+                task=orchestrator_outcome.execution_plan.task.value,
+                query_original=request.user_message,
+                query_clean=request.user_message.strip(),
+                confirmed_slots=conversation.state.slots,
+                coach_clarify_round=conversation.state.coach_clarify_round,
+                coach_pending_slot=conversation.state.coach_pending_slot,
+                profile_summary=state.current_profile,
+                frozen_evidence_pack=retrieval_outcome,
+            )
             if orchestrator_outcome.execution_plan.task.value == "COACH_BJJ":
                 coach_outcome = state.bjj_coach_service.run(
                     BJJCoachInput(
-                        query_original=request.user_message,
-                        query_clean=request.user_message.strip(),
-                        confirmed_slots=conversation.state.slots,
-                        coach_clarify_round=conversation.state.coach_clarify_round,
-                        coach_pending_slot=conversation.state.coach_pending_slot,
-                        profile_summary=state.current_profile,
+                        query_original=input_snapshot.query_original,
+                        query_clean=input_snapshot.query_clean,
+                        confirmed_slots=input_snapshot.confirmed_slots,
+                        coach_clarify_round=input_snapshot.coach_clarify_round,
+                        coach_pending_slot=input_snapshot.coach_pending_slot,
+                        profile_summary=input_snapshot.profile_summary_snapshot or state.current_profile,
                     ),
                     evidence_pack=retrieval_outcome,
                 )
                 if coach_outcome.clarify_request is not None:
                     conversation.state.coach_pending_slot = coach_outcome.clarify_request.slot.value
                     conversation.state.coach_clarify_round = coach_outcome.clarify_request.round
+                    clarify_input = _build_generation_input_snapshot(
+                        task=orchestrator_outcome.execution_plan.task.value,
+                        query_original=request.user_message,
+                        query_clean=request.user_message.strip(),
+                        confirmed_slots=conversation.state.slots,
+                        coach_clarify_round=conversation.state.coach_clarify_round,
+                        coach_pending_slot=conversation.state.coach_pending_slot,
+                        profile_summary=state.current_profile,
+                        frozen_evidence_pack=retrieval_outcome,
+                    )
                     recorder.add_event(
                         "clarify.requested",
                         who=coach_outcome.clarify_request.who.value,
@@ -303,6 +349,8 @@ def create_app(root_dir: str | Path | None = None) -> FastAPI:
                             provider=state.runtime_config.model_routing.provider,
                             model=state.runtime_config.model_routing.base_model,
                             prompt_version=state.runtime_config.prompt_versions.bjj_coach,
+                            prompt_snapshot=build_trace_prompt_snapshot(clarify_input),
+                            input_snapshot=clarify_input,
                             output=_dump(coach_outcome.clarify_request),
                         )
                     )
@@ -330,6 +378,8 @@ def create_app(root_dir: str | Path | None = None) -> FastAPI:
                         if orchestrator_outcome.execution_plan.task.value == "COACH_BJJ"
                         else state.runtime_config.prompt_versions.literary
                     ),
+                    prompt_snapshot=build_trace_prompt_snapshot(input_snapshot),
+                    input_snapshot=input_snapshot,
                     output=_dump(final_payload),
                     validator_report=validator_report,
                 )
@@ -408,23 +458,31 @@ def create_app(root_dir: str | Path | None = None) -> FastAPI:
         recorder.set_request_log(trace.request_log)
         recorder.set_retrieval_log(trace.retrieval_log)
         recorder.set_evidence_log(trace.evidence_log)
+        replay_input = _resolve_replay_input_snapshot(trace, state.current_profile)
+        replay_evidence = (
+            replay_input.frozen_evidence_pack
+            if request.use_frozen_evidence and replay_input.frozen_evidence_pack.items
+            else trace.evidence_log
+        )
 
         if trace.request_log.task == "COACH_BJJ":
             coach_outcome = state.bjj_coach_service.run(
                 BJJCoachInput(
-                    query_original=trace.retrieval_log.retrieval_plan.query_original if trace.retrieval_log.retrieval_plan else "",
-                    query_clean=trace.retrieval_log.retrieval_plan.query_text if trace.retrieval_log.retrieval_plan else "",
-                    confirmed_slots=trace.request_log.confirmed_slots,
-                    profile_summary=state.current_profile,
+                    query_original=replay_input.query_original,
+                    query_clean=replay_input.query_clean,
+                    confirmed_slots=replay_input.confirmed_slots,
+                    coach_clarify_round=replay_input.coach_clarify_round,
+                    coach_pending_slot=replay_input.coach_pending_slot,
+                    profile_summary=replay_input.profile_summary_snapshot or state.current_profile,
                 ),
-                evidence_pack=trace.evidence_log,
+                evidence_pack=replay_evidence,
             )
             final_answer = coach_outcome.final_answer
             validator_report = coach_outcome.validator_report
         else:
             final_answer = state.literary_service.run(
-                trace.retrieval_log.retrieval_plan.query_original if trace.retrieval_log.retrieval_plan else "",
-                trace.evidence_log,
+                replay_input.query_original,
+                replay_evidence,
             )
             validator_report = None
 
@@ -433,6 +491,8 @@ def create_app(root_dir: str | Path | None = None) -> FastAPI:
                 provider=state.runtime_config.model_routing.provider,
                 model=state.sft_service.resolve_model_for_variant(state.runtime_config, variant),
                 prompt_version=trace.generation_log.prompt_version,
+                prompt_snapshot=build_trace_prompt_snapshot(replay_input),
+                input_snapshot=replay_input,
                 output=_dump(final_answer),
                 validator_report=validator_report,
             )
@@ -522,6 +582,46 @@ def _build_ingest_payload(result, stored_jobs) -> dict:
         "chunk_ids": [chunk.chunk_id for chunk in result.chunks],
         "jobs": stored_jobs,
     }
+
+
+def _build_generation_input_snapshot(
+    *,
+    task: str | None,
+    query_original: str,
+    query_clean: str,
+    confirmed_slots: dict[str, str],
+    coach_clarify_round: int,
+    coach_pending_slot: str | None,
+    profile_summary: ProfileSummary,
+    frozen_evidence_pack=None,
+):
+    return build_trace_generation_input_snapshot(
+        task=task,
+        query_original=query_original,
+        query_clean=query_clean,
+        confirmed_slots=confirmed_slots,
+        coach_clarify_round=coach_clarify_round,
+        coach_pending_slot=coach_pending_slot,
+        profile_summary=_model_copy(profile_summary),
+        frozen_evidence_pack=_model_copy(frozen_evidence_pack) if frozen_evidence_pack is not None else None,
+    )
+
+
+def _resolve_replay_input_snapshot(trace: TraceRecord, fallback_profile: ProfileSummary):
+    snapshot = trace.generation_log.input_snapshot
+    if snapshot is not None:
+        return _model_copy(snapshot)
+    retrieval_plan = trace.retrieval_log.retrieval_plan
+    return _build_generation_input_snapshot(
+        task=trace.request_log.task,
+        query_original=retrieval_plan.query_original if retrieval_plan is not None else "",
+        query_clean=retrieval_plan.query_text if retrieval_plan is not None else "",
+        confirmed_slots=trace.request_log.confirmed_slots,
+        coach_clarify_round=0,
+        coach_pending_slot=None,
+        profile_summary=fallback_profile,
+        frozen_evidence_pack=trace.evidence_log,
+    )
 
 
 def _resolve_input_path(root_dir: str | Path, raw_path: str, must_be_dir: bool) -> Path:

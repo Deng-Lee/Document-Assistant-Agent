@@ -55,7 +55,9 @@ from .runtime_config import DEFAULT_RUNTIME_CONFIG, RuntimeConfigSnapshot, build
 from .schema_registry import export_contract_schemas
 from .sft import PolicyTrainRequest, SFTDatasetManifest, SFTExportRequest, SFTExportSample
 from .tracing import (
+    GenerationInputSnapshot,
     GenerationLog,
+    PromptSnapshot,
     RequestLog,
     RetrievalLog,
     TraceEvent,
@@ -108,6 +110,7 @@ __all__ = [
     "ExecutionPlan",
     "ExecutionPlanExplain",
     "GenerationLog",
+    "GenerationInputSnapshot",
     "GoldenCase",
     "DrillStart",
     "JobRecord",
@@ -120,6 +123,7 @@ __all__ = [
     "PDABaseModel",
     "PlanCheck",
     "PolicyTrainRequest",
+    "PromptSnapshot",
     "ProbeHit",
     "ProbeStats",
     "ProfileConstraint",

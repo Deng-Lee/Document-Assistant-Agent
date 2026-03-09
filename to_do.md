@@ -184,8 +184,8 @@
 - 为 debug 模式加额外 smoke/test
 
 ### 建议讨论点
-- minimal 模式是否允许保存摘要级 prompt snapshot
-- replay 所需的最小 generation input 到底保留哪些字段
+- 已确认：minimal 模式允许保存结构化、不可逆、摘要级 prompt snapshot；不允许保存完整 prompt 文本
+- 已确认：replay 所需的最小 generation input 保留 `task`、`query_original`、`query_clean`、`confirmed_slots`、`coach_clarify_round`、`coach_pending_slot`、`profile_summary_snapshot`、`frozen_evidence_pack`、`prompt_version`、`prompt_hash`
 
 ---
 

@@ -2,13 +2,18 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from datetime import datetime
+import json
 from hashlib import sha1
 from typing import Any, Iterator
 from uuid import uuid4
 
 from server.app.core import (
     EvidencePack,
+    EvidencePackItem,
+    GenerationInputSnapshot,
     GenerationLog,
+    PromptSnapshot,
+    ProfileSummary,
     RequestLog,
     RetrievalLog,
     RuntimeConfigSnapshot,
@@ -58,7 +63,18 @@ class TraceRecorder:
         self.evidence_log = self._apply_capture_level(evidence_log)
 
     def set_generation_log(self, generation_log: GenerationLog) -> None:
-        self.generation_log = generation_log
+        applied = self._apply_generation_capture_level(generation_log)
+        self.generation_log = applied
+        self.add_event(
+            "generation.metadata",
+            provider=applied.provider,
+            model=applied.model,
+            prompt_version=applied.prompt_version,
+            prompt_hash=applied.prompt_hash,
+            latency_ms=applied.latency_ms,
+            cost_estimate=applied.cost_estimate,
+            token_usage=applied.token_usage,
+        )
 
     def add_event(self, name: str, **attributes: Any) -> None:
         self.events.append(
@@ -130,15 +146,165 @@ class TraceRecorder:
         return trace_store.write_trace(self.to_trace_record())
 
     def _apply_capture_level(self, evidence_log: EvidencePack) -> EvidencePack:
+        items = [
+            EvidencePackItem(
+                evidence_id=item.evidence_id,
+                doc_id=item.doc_id,
+                doc_version_id=item.doc_version_id,
+                locator=item.locator,
+                safe_summary=item.safe_summary,
+                excerpt_snapshot=(
+                    item.excerpt_snapshot
+                    if self.runtime_config_snapshot.trace_capture_level == TraceCaptureLevel.DEBUG
+                    else None
+                ),
+                metadata_digest=item.metadata_digest,
+                rank_signals=item.rank_signals,
+            )
+            for item in evidence_log.items
+        ]
         if self.runtime_config_snapshot.trace_capture_level == TraceCaptureLevel.DEBUG:
-            return evidence_log
+            return EvidencePack(
+                items=items,
+                token_budget=evidence_log.token_budget,
+                per_doc_limit=evidence_log.per_doc_limit,
+            )
         # Minimal mode keeps the structural evidence contract only.
         return EvidencePack(
-            items=evidence_log.items,
+            items=items,
             token_budget=evidence_log.token_budget,
             per_doc_limit=evidence_log.per_doc_limit,
+        )
+
+    def _apply_generation_capture_level(self, generation_log: GenerationLog) -> GenerationLog:
+        input_snapshot = generation_log.input_snapshot
+        if input_snapshot is not None:
+            input_snapshot = GenerationInputSnapshot(
+                task=input_snapshot.task,
+                query_original=input_snapshot.query_original,
+                query_clean=input_snapshot.query_clean,
+                confirmed_slots=dict(input_snapshot.confirmed_slots),
+                coach_clarify_round=input_snapshot.coach_clarify_round,
+                coach_pending_slot=input_snapshot.coach_pending_slot,
+                profile_summary_snapshot=input_snapshot.profile_summary_snapshot,
+                profile_version_id=input_snapshot.profile_version_id,
+                frozen_evidence_pack=self._apply_capture_level(input_snapshot.frozen_evidence_pack),
+            )
+
+        prompt_snapshot = generation_log.prompt_snapshot
+        if prompt_snapshot is not None:
+            prompt_snapshot = self._sanitize_prompt_snapshot(prompt_snapshot)
+
+        prompt_hash = generation_log.prompt_hash or _prompt_hash(
+            generation_log.prompt_version,
+            prompt_snapshot,
+        )
+        return GenerationLog(
+            provider=generation_log.provider,
+            model=generation_log.model,
+            prompt_version=generation_log.prompt_version,
+            prompt_hash=prompt_hash,
+            prompt_snapshot=prompt_snapshot,
+            input_snapshot=input_snapshot,
+            latency_ms=generation_log.latency_ms,
+            token_usage=dict(generation_log.token_usage),
+            cost_estimate=generation_log.cost_estimate,
+            output=dict(generation_log.output),
+            validator_report=generation_log.validator_report,
+        )
+
+    def _sanitize_prompt_snapshot(self, prompt_snapshot: PromptSnapshot) -> PromptSnapshot:
+        if self.runtime_config_snapshot.trace_capture_level == TraceCaptureLevel.DEBUG:
+            return prompt_snapshot
+        return PromptSnapshot(
+            task=prompt_snapshot.task,
+            query_original_hash=prompt_snapshot.query_original_hash,
+            query_clean_hash=prompt_snapshot.query_clean_hash,
+            confirmed_slot_keys=list(prompt_snapshot.confirmed_slot_keys),
+            coach_clarify_round=prompt_snapshot.coach_clarify_round,
+            coach_pending_slot=prompt_snapshot.coach_pending_slot,
+            profile_version_id=prompt_snapshot.profile_version_id,
+            evidence_item_count=prompt_snapshot.evidence_item_count,
         )
 
 
 def _trace_id() -> str:
     return f"trace_{sha1(uuid4().hex.encode('utf-8')).hexdigest()[:12]}"
+
+
+def build_generation_input_snapshot(
+    *,
+    task: str | None,
+    query_original: str,
+    query_clean: str,
+    confirmed_slots: dict[str, str] | None = None,
+    coach_clarify_round: int = 0,
+    coach_pending_slot: str | None = None,
+    profile_summary: ProfileSummary | None = None,
+    frozen_evidence_pack: EvidencePack | None = None,
+) -> GenerationInputSnapshot:
+    return GenerationInputSnapshot(
+        task=task,
+        query_original=query_original,
+        query_clean=query_clean,
+        confirmed_slots=dict(confirmed_slots or {}),
+        coach_clarify_round=coach_clarify_round,
+        coach_pending_slot=coach_pending_slot,
+        profile_summary_snapshot=profile_summary,
+        profile_version_id=profile_summary.profile_version_id if profile_summary is not None else None,
+        frozen_evidence_pack=frozen_evidence_pack or EvidencePack(),
+    )
+
+
+def build_prompt_snapshot(input_snapshot: GenerationInputSnapshot) -> PromptSnapshot:
+    return PromptSnapshot(
+        task=input_snapshot.task,
+        query_original_hash=_fingerprint(input_snapshot.query_original),
+        query_clean_hash=_fingerprint(input_snapshot.query_clean),
+        confirmed_slot_keys=sorted(input_snapshot.confirmed_slots.keys()),
+        coach_clarify_round=input_snapshot.coach_clarify_round,
+        coach_pending_slot=input_snapshot.coach_pending_slot,
+        profile_version_id=input_snapshot.profile_version_id,
+        evidence_item_count=len(input_snapshot.frozen_evidence_pack.items),
+        query_original_preview=_preview(input_snapshot.query_original),
+        query_clean_preview=_preview(input_snapshot.query_clean),
+        confirmed_slots_snapshot=dict(input_snapshot.confirmed_slots),
+        frozen_evidence_ids=[item.evidence_id for item in input_snapshot.frozen_evidence_pack.items],
+    )
+
+
+def _fingerprint(value: str) -> str | None:
+    normalized = value.strip()
+    if not normalized:
+        return None
+    return sha1(normalized.encode("utf-8")).hexdigest()
+
+
+def _preview(value: str, limit: int = 120) -> str | None:
+    normalized = value.strip()
+    if not normalized:
+        return None
+    return normalized[:limit]
+
+
+def _prompt_hash(prompt_version: str, prompt_snapshot: PromptSnapshot | None) -> str:
+    payload = {
+        "prompt_version": prompt_version,
+        "prompt_snapshot": _minimal_prompt_payload(prompt_snapshot),
+    }
+    return sha1(json.dumps(payload, ensure_ascii=True, sort_keys=True).encode("utf-8")).hexdigest()
+
+
+def _minimal_prompt_payload(prompt_snapshot: PromptSnapshot | None) -> dict[str, Any]:
+    if prompt_snapshot is None:
+        return {}
+    return {
+        "task": prompt_snapshot.task,
+        "query_original_hash": prompt_snapshot.query_original_hash,
+        "query_clean_hash": prompt_snapshot.query_clean_hash,
+        "confirmed_slot_keys": list(prompt_snapshot.confirmed_slot_keys),
+        "coach_clarify_round": prompt_snapshot.coach_clarify_round,
+        "coach_pending_slot": prompt_snapshot.coach_pending_slot,
+        "profile_version_id": prompt_snapshot.profile_version_id,
+        "evidence_item_count": prompt_snapshot.evidence_item_count,
+    }
