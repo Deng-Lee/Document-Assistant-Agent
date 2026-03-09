@@ -35,7 +35,7 @@ class DeterministicPlanBuilder:
                 clarify=ClarifyDirective(
                     slot=slot,
                     question_template_id=clarify_template_id(slot),
-                    options=self._clarify_options(slot, probe_stats),
+                    options=clarify_options_for_slot(slot, probe_stats),
                 ),
                 explain=ExecutionPlanExplain(reason_codes=plan_check.reason_codes, probe_used=True),
             )
@@ -71,22 +71,6 @@ class DeterministicPlanBuilder:
             retrieval_plan=retrieval_plan,
             explain=ExecutionPlanExplain(reason_codes=reasons, probe_used=True),
         )
-
-    @staticmethod
-    def _clarify_options(slot: ClarifySlot, probe_stats: ProbeStats) -> list[str]:
-        if slot == ClarifySlot.ORIENTATION:
-            return ["上位", "下位"]
-        if slot == ClarifySlot.DOMAIN:
-            return domain_clarify_options()
-        if slot in {ClarifySlot.POSITION, ClarifySlot.GOAL}:
-            counts = probe_stats.slot_value_hist.get(slot.value, {})
-            ranked = [value for value, _ in sorted(counts.items(), key=lambda item: item[1], reverse=True)]
-            return [value for value in ranked if value != "__missing__"][:3] + ["其他/不确定"]
-        if slot == ClarifySlot.DISTANCE:
-            return ["远距离", "近距离"]
-        if slot == ClarifySlot.OPPONENT_CONTROL:
-            return ["衣领", "袖子", "手腕", "裤子", "脚腕", "胯", "脖子", "不确定"]
-        return []
 
 
 def _domain_to_doc_type(domain: DomainType, state: ConversationState):
@@ -130,6 +114,22 @@ def build_retrieval_plan_for_state(
 
 def domain_clarify_options() -> list[str]:
     return ["训练", "写作/阅读"]
+
+
+def clarify_options_for_slot(slot: ClarifySlot, probe_stats: ProbeStats) -> list[str]:
+    if slot == ClarifySlot.ORIENTATION:
+        return ["上位", "下位"]
+    if slot == ClarifySlot.DOMAIN:
+        return domain_clarify_options()
+    if slot in {ClarifySlot.POSITION, ClarifySlot.GOAL}:
+        counts = probe_stats.slot_value_hist.get(slot.value, {})
+        ranked = [value for value, _ in sorted(counts.items(), key=lambda item: item[1], reverse=True)]
+        return [value for value in ranked if value != "__missing__"][:3] + ["其他/不确定"]
+    if slot == ClarifySlot.DISTANCE:
+        return ["远距离", "近距离"]
+    if slot == ClarifySlot.OPPONENT_CONTROL:
+        return ["衣领", "袖子", "手腕", "裤子", "脚腕", "胯", "脖子", "不确定"]
+    return []
 
 
 def _render_query_text(user_message: str, slots: dict[str, str], extra_terms: list[str] | None = None) -> str:
