@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 
 from .base import ModelProfileSettings
+from ..env import load_local_env
 from .fake import FAKE_MODEL_PROFILE
 from .real import REAL_MODEL_PROFILE
 
@@ -16,6 +17,7 @@ _PROFILES: dict[str, ModelProfileSettings] = {
 
 
 def active_model_profile_name() -> str:
+    load_local_env()
     return os.getenv(MODEL_PROFILE_ENV, "fake").strip().lower() or "fake"
 
 

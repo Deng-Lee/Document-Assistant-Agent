@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import unittest
 from tempfile import TemporaryDirectory
 from pathlib import Path
@@ -321,3 +322,39 @@ class APITests(unittest.TestCase):
             history = reloaded.profile_repository.list_profiles()
             self.assertGreaterEqual(len(history), 2)
             self.assertEqual(history[0].profile_version_id, updated["profile_version_id"])
+
+    def test_create_app_state_loads_local_env_file(self) -> None:
+        keys = ("PDA_MODEL_PROFILE", "OPENAI_API_KEY", "OPENAI_BASE_URL")
+        original = {key: os.environ.get(key) for key in keys}
+        try:
+            for key in keys:
+                os.environ.pop(key, None)
+            with TemporaryDirectory() as tmp:
+                Path(tmp, ".env").write_text(
+                    "\n".join(
+                        [
+                            "PDA_MODEL_PROFILE=real",
+                            "OPENAI_API_KEY=test-local-key",
+                            "OPENAI_BASE_URL=https://example.invalid/v1",
+                        ]
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+
+                from server.app.api.state import create_app_state
+
+                state = create_app_state(tmp)
+                self.assertEqual(state.runtime_config.model_routing.profile_name, "real")
+                self.assertEqual(state.runtime_config.model_routing.provider, "openai")
+                self.assertEqual(os.environ.get("OPENAI_API_KEY"), "test-local-key")
+                self.assertEqual(os.environ.get("OPENAI_BASE_URL"), "https://example.invalid/v1")
+                provider = state.orchestrator_service.replanner.provider
+                self.assertEqual(getattr(provider, "api_key", None), "test-local-key")
+                self.assertEqual(getattr(getattr(provider, "transport", None), "base_url", None), "https://example.invalid/v1")
+        finally:
+            for key, value in original.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value

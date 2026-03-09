@@ -11,6 +11,7 @@ from server.app.core import (
     ProfileSummary,
     build_runtime_config,
 )
+from server.app.core.env import load_local_env
 from server.app.evaluation import EvaluationService
 from server.app.ingestion import IngestionService
 from server.app.jobs import JobService
@@ -72,6 +73,7 @@ class AppState(PDABaseModel):
 
 def create_app_state(root_dir: str | Path) -> AppState:
     root = Path(root_dir).resolve()
+    load_local_env(root)
     storage_paths = StoragePaths.from_root(root)
     storage_paths.ensure_directories()
 
