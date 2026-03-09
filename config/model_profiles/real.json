@@ -1,0 +1,30 @@
+{
+  "name": "real",
+  "provider": "openai",
+  "base_model": "gpt-4.1-mini",
+  "policy_model": "policy://pending",
+  "embedding_model": "text-embedding-3-large",
+  "embedding_version_id": "text-embedding-3-large:default",
+  "generation": {
+    "bjj": {
+      "temperature": 0.1,
+      "top_p": 1.0,
+      "max_tokens": 1600
+    },
+    "literary": {
+      "temperature": 0.9,
+      "top_p": 0.9,
+      "max_tokens": 1800
+    },
+    "replan": {
+      "temperature": 0.1,
+      "top_p": 1.0,
+      "max_tokens": 800
+    },
+    "safe_summary": {
+      "temperature": 0.0,
+      "top_p": 1.0,
+      "max_tokens": 256
+    }
+  }
+}

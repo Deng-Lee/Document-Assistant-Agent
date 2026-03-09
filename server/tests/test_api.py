@@ -324,7 +324,7 @@ class APITests(unittest.TestCase):
             self.assertEqual(history[0].profile_version_id, updated["profile_version_id"])
 
     def test_create_app_state_loads_local_env_file(self) -> None:
-        keys = ("PDA_MODEL_PROFILE", "OPENAI_API_KEY", "OPENAI_BASE_URL")
+        keys = ("PDA_MODEL_PROFILE", "PDA_MODEL_PROFILE_CONFIG_DIR", "OPENAI_API_KEY", "OPENAI_BASE_URL")
         original = {key: os.environ.get(key) for key in keys}
         try:
             for key in keys:
@@ -358,3 +358,65 @@ class APITests(unittest.TestCase):
                     os.environ.pop(key, None)
                 else:
                     os.environ[key] = value
+
+    def test_real_profile_can_be_loaded_from_custom_config_directory(self) -> None:
+        keys = ("PDA_MODEL_PROFILE", "PDA_MODEL_PROFILE_CONFIG_DIR")
+        original = {key: os.environ.get(key) for key in keys}
+        try:
+            for key in keys:
+                os.environ.pop(key, None)
+            with TemporaryDirectory() as tmp:
+                config_dir = Path(tmp) / "profile_configs"
+                config_dir.mkdir(parents=True)
+                (config_dir / "real.json").write_text(
+                    json.dumps(
+                        {
+                            "name": "real",
+                            "provider": "openai",
+                            "base_model": "qwen-plus",
+                            "policy_model": "policy://pending",
+                            "embedding_model": "text-embedding-v4",
+                            "embedding_version_id": "text-embedding-v4:qwen",
+                            "generation": {
+                                "bjj": {"temperature": 0.2, "top_p": 0.95, "max_tokens": 1500},
+                                "literary": {"temperature": 0.85, "top_p": 0.9, "max_tokens": 1700},
+                                "replan": {"temperature": 0.05, "top_p": 1.0, "max_tokens": 700},
+                                "safe_summary": {"temperature": 0.0, "top_p": 1.0, "max_tokens": 220},
+                            },
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+                os.environ["PDA_MODEL_PROFILE_CONFIG_DIR"] = str(config_dir)
+
+                from server.app.core import build_runtime_config
+
+                runtime_config = build_runtime_config("real")
+                self.assertEqual(runtime_config.model_routing.base_model, "qwen-plus")
+                self.assertEqual(runtime_config.model_routing.embedding_model, "text-embedding-v4")
+                self.assertEqual(runtime_config.embedding_version_id, "text-embedding-v4:qwen")
+                self.assertEqual(runtime_config.generation.replan["max_tokens"], 700)
+        finally:
+            for key, value in original.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+    def test_real_profile_missing_config_file_raises_clear_error(self) -> None:
+        original = os.environ.get("PDA_MODEL_PROFILE_CONFIG_DIR")
+        try:
+            with TemporaryDirectory() as tmp:
+                os.environ["PDA_MODEL_PROFILE_CONFIG_DIR"] = str(Path(tmp) / "missing_profiles")
+                from server.app.core import get_model_profile
+
+                with self.assertRaises(ValueError) as exc:
+                    get_model_profile("real")
+                self.assertIn("Missing model profile config", str(exc.exception))
+        finally:
+            if original is None:
+                os.environ.pop("PDA_MODEL_PROFILE_CONFIG_DIR", None)
+            else:
+                os.environ["PDA_MODEL_PROFILE_CONFIG_DIR"] = original
