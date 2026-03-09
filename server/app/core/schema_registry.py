@@ -11,7 +11,7 @@ from .jobs import JobRecord, JobRunResult
 from .profile import ProfileSummary
 from .retrieval import ExecutionPlan, PlanCheck, ProbeStats, RetrievalPlan
 from .runtime_config import RuntimeConfigSnapshot
-from .sft import PolicyTrainRequest, SFTDatasetManifest, SFTExportRequest, SFTExportSample
+from .sft import PolicyCheckpointRecord, PolicyTrainRequest, SFTDatasetManifest, SFTExportRequest, SFTExportSample
 from .tracing import TraceRecord
 
 
@@ -45,6 +45,7 @@ SCHEMA_MODELS = {
     "sft_export_request": SFTExportRequest,
     "sft_export_sample": SFTExportSample,
     "sft_dataset_manifest": SFTDatasetManifest,
+    "policy_checkpoint_record": PolicyCheckpointRecord,
     "policy_train_request": PolicyTrainRequest,
 }
 

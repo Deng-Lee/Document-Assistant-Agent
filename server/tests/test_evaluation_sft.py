@@ -124,7 +124,9 @@ class EvaluationAndSFTTests(unittest.TestCase):
             trace_store, _eval_repo = _build_eval_stack(tmp)
 
             keep_trace = make_trace_record(trace_id="trace_keep")
+            _attach_input_snapshot(keep_trace)
             drop_trace = make_trace_record(trace_id="trace_drop")
+            _attach_input_snapshot(drop_trace)
             drop_output = dict(drop_trace.generation_log.output)
             drop_output["reasoning_status"] = dict(drop_output["reasoning_status"])
             drop_output["reasoning_status"]["gate_label"] = "LOW_EVIDENCE"
@@ -137,7 +139,7 @@ class EvaluationAndSFTTests(unittest.TestCase):
             from server.app.core import ModelVariant, SFTExportRequest, build_runtime_config
             from server.app.sft import SFTService
 
-            service = SFTService(trace_store=trace_store)
+            service = SFTService(trace_store=trace_store, policy_root=f"{tmp}/policies")
             export_dir = f"{tmp}/datasets/sft/v1/test_suite"
             manifest, samples = service.export_dataset(
                 request=SFTExportRequest(trace_filter={"gate_label": "HIGH_EVIDENCE"}),
@@ -151,6 +153,8 @@ class EvaluationAndSFTTests(unittest.TestCase):
             rows = [json.loads(line) for line in train_path.read_text(encoding="utf-8").splitlines() if line.strip()]
             self.assertEqual(len(rows), 1)
             self.assertEqual(rows[0]["trace_id"], "trace_keep")
+            self.assertEqual(rows[0]["input"]["task"], "COACH_BJJ")
+            self.assertIn("query_original", rows[0]["input"])
 
             checkpoint = service.register_policy_checkpoint(
                 output_dir=f"{tmp}/policy_ckpt",
@@ -162,6 +166,92 @@ class EvaluationAndSFTTests(unittest.TestCase):
                 service.resolve_model_for_variant(build_runtime_config(), ModelVariant.POLICY, checkpoint),
                 checkpoint.policy_model_ref,
             )
+
+    def test_sft_training_registers_policy_and_replays_policy_variant(self) -> None:
+        with TemporaryDirectory() as tmp:
+            trace_store, eval_repo = _build_eval_stack(tmp)
+            trace = make_trace_record(trace_id="trace_policy")
+            _attach_input_snapshot(trace)
+            trace_store.write_trace(trace)
+            _write_golden_set(
+                tmp,
+                "policy_suite",
+                [
+                    {
+                        "case_id": "case_policy",
+                        "query": "turtle escape",
+                        "domain": "BJJ",
+                        "trace_id": "trace_policy",
+                        "expected_behavior": {"required_mode": "FULL", "response_contains": ["policy tuned"]},
+                        "expected_chunk_ids": ["chunk_1"],
+                    }
+                ],
+            )
+
+            from server.app.agents import BJJCoachService, LiteraryService
+            from server.app.core import EvalRunRequest, ModelVariant, PolicyTrainRequest, SFTExportRequest, ProfileSummary, build_runtime_config
+            from server.app.evaluation import EvaluationService
+            from server.app.sft import SFTService
+
+            runtime_config = build_runtime_config()
+            service = SFTService(trace_store=trace_store, policy_root=f"{tmp}/policies")
+            export_dir = Path(tmp) / "datasets" / "sft" / "v1" / "policy_suite"
+            manifest, samples = service.export_dataset(
+                request=SFTExportRequest(trace_filter={"gate_label": "HIGH_EVIDENCE"}),
+                output_dir=export_dir,
+            )
+            tuned_output = json.loads(json.dumps(samples[0].baseline_output))
+            tuned_output["observations"][0]["text"] = "policy tuned observation"
+            samples[0].target_output = tuned_output
+            train_path = service.build_train_rows(samples, export_dir / "train.jsonl", prefer_target_output=True)
+
+            checkpoint = service.train_policy(
+                PolicyTrainRequest(
+                    train_path=str(train_path),
+                    output_path=str(Path(tmp) / "policy_ckpt"),
+                    base_model=runtime_config.model_routing.base_model,
+                    dry_run=False,
+                    activate=True,
+                ),
+                dataset_manifest=manifest,
+            )
+
+            self.assertTrue((Path(tmp) / "policy_ckpt" / "policy_artifact.json").exists())
+            self.assertEqual(service.get_active_policy_ref(), checkpoint.policy_model_ref)
+            replayed_trace, final_answer = service.replay_trace(
+                source_trace=trace,
+                variant=ModelVariant.POLICY,
+                runtime_config=runtime_config,
+                current_profile=ProfileSummary(profile_version_id="profile_default"),
+                bjj_coach_service=BJJCoachService(runtime_config=runtime_config),
+                literary_service=LiteraryService(),
+            )
+
+            self.assertEqual(final_answer.observations[0].text, "policy tuned observation")
+            self.assertEqual(replayed_trace.generation_log.model, checkpoint.policy_model_ref)
+
+            eval_service = EvaluationService(
+                trace_store=trace_store,
+                golden_case_repository=eval_repo,
+                repo_root=tmp,
+                replay_runner=lambda traces, variant, use_frozen_evidence: service.replay_eval_traces(
+                    traces=traces,
+                    variant=variant,
+                    runtime_config=runtime_config,
+                    current_profile=ProfileSummary(profile_version_id="profile_default"),
+                    bjj_coach_service=BJJCoachService(runtime_config=runtime_config),
+                    literary_service=LiteraryService(),
+                    use_frozen_evidence=use_frozen_evidence,
+                ),
+            )
+            result = eval_service.run(
+                EvalRunRequest(eval_set_id="policy_suite", model_variant=ModelVariant.POLICY),
+                trace_ids=["trace_policy"],
+            )
+            policy_trace = trace_store.read_trace(result.source_trace_ids[0])
+            self.assertNotEqual(policy_trace.trace_id, "trace_policy")
+            self.assertEqual(policy_trace.generation_log.model, checkpoint.policy_model_ref)
+            self.assertIn("policy tuned", policy_trace.generation_log.output["observations"][0]["text"])
 
 
 def _build_eval_stack(root: str):
@@ -179,3 +269,21 @@ def _write_golden_set(root: str, eval_set_id: str, cases: list[dict]) -> None:
         "\n".join(json.dumps(case, ensure_ascii=False) for case in cases) + "\n",
         encoding="utf-8",
     )
+
+
+def _attach_input_snapshot(trace) -> None:
+    from server.app.observability import build_generation_input_snapshot, build_prompt_snapshot
+    from server.app.core import ProfileSummary
+
+    input_snapshot = build_generation_input_snapshot(
+        task=trace.request_log.task,
+        query_original=trace.retrieval_log.retrieval_plan.query_original if trace.retrieval_log.retrieval_plan else "",
+        query_clean=trace.retrieval_log.retrieval_plan.query_text if trace.retrieval_log.retrieval_plan else "",
+        confirmed_slots=trace.request_log.confirmed_slots,
+        coach_clarify_round=trace.generation_log.output.get("reasoning_status", {}).get("coach_clarify_round", 0),
+        coach_pending_slot=None,
+        profile_summary=ProfileSummary(profile_version_id=trace.request_log.profile_version_id or "profile_test"),
+        frozen_evidence_pack=trace.evidence_log,
+    )
+    trace.generation_log.input_snapshot = input_snapshot
+    trace.generation_log.prompt_snapshot = build_prompt_snapshot(input_snapshot)

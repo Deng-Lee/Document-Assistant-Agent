@@ -40,8 +40,19 @@ class SFTDatasetManifest(PDABaseModel):
     sample_count: int = Field(default=0, ge=0)
 
 
+class PolicyCheckpointRecord(SFTDatasetManifest):
+    run_id: str
+    checkpoint_path: str
+    base_model: str
+    policy_model_ref: str
+    training_backend: str = "local_policy_memory_v1"
+    target_row_count: int = Field(default=0, ge=0)
+
+
 class PolicyTrainRequest(PDABaseModel):
     train_path: str
     output_path: str
+    base_model: str | None = None
     model_variant: ModelVariant = ModelVariant.POLICY
     dry_run: bool = True
+    activate: bool = True

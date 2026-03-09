@@ -11,6 +11,7 @@ from server.app.core import (
     JobRunResult,
     LiteraryFinalAnswer,
     PDABaseModel,
+    PolicyCheckpointRecord,
     ProbeStats,
     ProfileSummary,
     RetrievalLog,
@@ -113,6 +114,11 @@ class EvalResultsResponse(PDABaseModel):
 class SFTExportResponse(PDABaseModel):
     export_path: str
     manifest: SFTDatasetManifest
+
+
+class SFTTrainResponse(PDABaseModel):
+    checkpoint: PolicyCheckpointRecord
+    active_policy_ref: str | None = None
 
 
 class ProfileResponse(ProfileSummary):

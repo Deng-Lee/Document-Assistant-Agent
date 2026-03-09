@@ -12,6 +12,7 @@ class StoragePaths(PDABaseModel):
     filestore_dir: Path
     traces_dir: Path
     jobs_dir: Path
+    policy_dir: Path
 
     @classmethod
     def from_root(cls, root: str | Path) -> "StoragePaths":
@@ -24,6 +25,7 @@ class StoragePaths(PDABaseModel):
             filestore_dir=data_root / "filestore",
             traces_dir=data_root / "traces",
             jobs_dir=data_root / "jobs",
+            policy_dir=data_root / "policies",
         )
 
     def ensure_directories(self) -> None:
@@ -33,6 +35,7 @@ class StoragePaths(PDABaseModel):
             self.filestore_dir,
             self.traces_dir,
             self.jobs_dir,
+            self.policy_dir,
         ):
             path.mkdir(parents=True, exist_ok=True)
 

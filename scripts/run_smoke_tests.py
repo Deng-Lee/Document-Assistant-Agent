@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
@@ -76,6 +77,7 @@ def main() -> None:
         ReplayRequest,
         RetrieveRequest,
         RunJobsRequest,
+        SFTTrainAPIRequest,
     )
     from server.app.evaluation import EvaluationService
     from server.app.ingestion import IngestionService
@@ -452,6 +454,49 @@ def main() -> None:
         assert api_eval_results["runs"]
         api_sft = _to_dict(api_routes["/api/sft/export"](SFTExportRequest(trace_filter={})))
         assert api_sft["manifest"]["sample_count"] >= 1
+        api_sft_dir = Path(api_sft["export_path"])
+        api_exported = [json.loads(line) for line in (api_sft_dir / "dataset_export.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
+        api_rows = []
+        for sample in api_exported:
+            if not isinstance(sample.get("baseline_output"), dict) or not sample["baseline_output"].get("observations"):
+                continue
+            target_output = json.loads(json.dumps(sample["baseline_output"]))
+            target_output["observations"][0]["text"] = "api smoke policy tuned observation"
+            api_rows.append(
+                {
+                    "trace_id": sample["trace_id"],
+                    "input": {
+                        "task": sample["profile_summary"].get("task"),
+                        "query_original": sample["profile_summary"].get("query_original", ""),
+                        "query_clean": sample["profile_summary"].get("query_clean", ""),
+                        "confirmed_slots": sample["confirmed_slots"],
+                        "coach_pending_slot": sample["profile_summary"].get("coach_pending_slot"),
+                        "profile_summary": sample["profile_summary"],
+                        "gate_decision": sample["gate_decision"],
+                        "coach_clarify_round": sample["coach_clarify_round"],
+                        "allowed_evidence_ids": sample["allowed_evidence_ids"],
+                        "evidence_pack_selected": sample["evidence_pack_selected"],
+                    },
+                    "target_output": target_output,
+                }
+            )
+        if api_rows:
+            api_train_path = api_sft_dir / "train.jsonl"
+            api_train_path.write_text("\n".join(json.dumps(row, ensure_ascii=False) for row in api_rows) + "\n", encoding="utf-8")
+            api_sft_train = _to_dict(
+                api_routes["/api/sft/train"](
+                    SFTTrainAPIRequest(
+                        train_path=str(api_train_path),
+                        output_path=str(api_root / "policy_ckpt"),
+                        base_model="mock-bjj-base",
+                        dry_run=False,
+                        activate=True,
+                    )
+                )
+            )
+            assert api_sft_train["checkpoint"]["policy_model_ref"].startswith("policy://")
+            api_policy_replay = _to_dict(api_routes["/api/replay/{trace_id}"](api_chat["trace_id"], ReplayRequest(model_variant="policy")))
+            assert api_policy_replay["trace_id"]
         api_profile = _to_dict(api_routes["GET /api/profile"]())
         assert api_profile["profile_version_id"]
         print("api_smoke_ok")
@@ -514,7 +559,7 @@ def main() -> None:
         assert evaluation.list_results()
         print("evaluation_smoke_ok")
 
-        sft = SFTService(trace_store=trace_store2)
+        sft = SFTService(trace_store=trace_store2, policy_root=root / "data" / "policies")
         dataset_dir = root / "datasets" / "sft" / "v1" / "smoke"
         manifest, samples = sft.export_dataset(
             request=SFTExportRequest(trace_filter={}, format="jsonl"),
@@ -525,19 +570,44 @@ def main() -> None:
         assert samples
         assert (dataset_dir / "dataset_export.jsonl").exists()
         assert (dataset_dir / "manifest.json").exists()
-
-        train_path = sft.build_train_rows(samples, dataset_dir / "train.jsonl")
+        samples[0].target_output = json.loads(json.dumps(samples[0].baseline_output))
+        samples[0].target_output["observations"][0]["text"] = "smoke policy tuned observation"
+        train_path = sft.build_train_rows(samples, dataset_dir / "train.jsonl", prefer_target_output=True)
         assert train_path.exists()
-        checkpoint = sft.register_policy_checkpoint(
-            output_dir=root / "data" / "policy_checkpoints" / "smoke_run",
-            base_model=orchestrator.runtime_config.model_routing.base_model,
-            dataset_manifest=manifest,
-        )
-        train_request = sft.build_policy_train_request(train_path, root / "data" / "policy_checkpoints" / "smoke_run", dry_run=True)
+        train_request = sft.build_policy_train_request(train_path, root / "data" / "policy_checkpoints" / "smoke_run", dry_run=False)
+        checkpoint = sft.train_policy(train_request, dataset_manifest=manifest)
         assert checkpoint.policy_model_ref.startswith("policy://")
-        assert train_request.dry_run is True
-        assert sft.resolve_model_for_variant(orchestrator.runtime_config, ModelVariant.BASE) == orchestrator.runtime_config.model_routing.base_model
-        assert sft.resolve_model_for_variant(orchestrator.runtime_config, ModelVariant.POLICY, checkpoint) == checkpoint.policy_model_ref
+        assert sft.get_active_policy_ref() == checkpoint.policy_model_ref
+        replayed_trace, replayed_answer = sft.replay_trace(
+            source_trace=loaded_trace,
+            variant=ModelVariant.POLICY,
+            runtime_config=orchestrator.runtime_config,
+            current_profile=ProfileSummary(profile_version_id="profile_default"),
+            bjj_coach_service=coach,
+            literary_service=literary,
+        )
+        assert replayed_trace.generation_log.model == checkpoint.policy_model_ref
+        assert replayed_answer.observations[0].text == "smoke policy tuned observation"
+        policy_eval = EvaluationService(
+            trace_store=trace_store2,
+            golden_case_repository=eval_repo,
+            repo_root=root,
+            replay_runner=lambda traces, variant, use_frozen_evidence: sft.replay_eval_traces(
+                traces=traces,
+                variant=variant,
+                runtime_config=orchestrator.runtime_config,
+                current_profile=ProfileSummary(profile_version_id="profile_default"),
+                bjj_coach_service=coach,
+                literary_service=literary,
+                use_frozen_evidence=use_frozen_evidence,
+            ),
+        )
+        policy_eval_result = policy_eval.run(
+            EvalRunRequest(eval_set_id="smoke_eval", model_variant=ModelVariant.POLICY),
+            trace_ids=[recorder.trace_id],
+        )
+        assert policy_eval_result.source_trace_ids
+        assert trace_store2.read_trace(policy_eval_result.source_trace_ids[0]).generation_log.model == checkpoint.policy_model_ref
         print("sft_smoke_ok")
 
     print("all_smoke_tests_ok")

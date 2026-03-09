@@ -31,18 +31,22 @@ class EvaluationService:
         trace_store: TraceStore,
         golden_case_repository: GoldenCaseRepository | None = None,
         repo_root: str | Path | None = None,
+        replay_runner: Callable[[list[TraceRecord], ModelVariant, bool], list[TraceRecord]] | None = None,
         ragas_runner: Callable[[list[GoldenCase], list[TraceRecord]], EvalStageResult] | None = None,
         judge_runner: Callable[[list[GoldenCase], list[TraceRecord]], EvalStageResult] | None = None,
     ):
         self.trace_store = trace_store
         self.golden_case_repository = golden_case_repository
         self.repo_root = Path(repo_root).resolve() if repo_root is not None else None
+        self.replay_runner = replay_runner
         self.ragas_runner = ragas_runner or self._run_ragas
         self.judge_runner = judge_runner or self._run_judge
 
     def run(self, request: EvalRunRequest, trace_ids: list[str] | None = None) -> EvalRunResult:
         golden_cases = self._load_golden_cases(request.eval_set_id)
         traces = self._load_traces(trace_ids, golden_cases)
+        if request.model_variant != ModelVariant.BASE and self.replay_runner is not None:
+            traces = self.replay_runner(traces, request.model_variant, request.use_frozen_evidence)
         metrics, failures, latency_summary, cost_summary = compute_eval_metrics(traces)
         ragas = self.ragas_runner(golden_cases, traces)
         judge = self.judge_runner(golden_cases, traces)

@@ -84,11 +84,17 @@ def create_app_state(root_dir: str | Path) -> AppState:
     vector_store.ensure_collection()
 
     runtime_config = build_runtime_config()
+    sft_service = SFTService(trace_store=trace_store, policy_root=storage_paths.policy_dir)
+    active_policy_ref = sft_service.get_active_policy_ref()
+    if active_policy_ref is not None:
+        runtime_config.model_routing.policy_model = active_policy_ref
     retrieval_service = RetrievalService(document_repository, vector_store=vector_store, runtime_config=runtime_config)
     orchestrator_service = OrchestratorService(retrieval_service, runtime_config=runtime_config)
     job_service = JobService(document_repository, job_repository, runtime_config=runtime_config, vector_store=vector_store)
-
-    return AppState(
+    current_profile = ProfileSummary(profile_version_id="profile_default")
+    bjj_coach_service = BJJCoachService(runtime_config=runtime_config)
+    literary_service = LiteraryService()
+    app_state = AppState(
         root_dir=root,
         storage_paths=storage_paths,
         runtime_config=runtime_config,
@@ -106,13 +112,24 @@ def create_app_state(root_dir: str | Path) -> AppState:
         retrieval_service=retrieval_service,
         orchestrator_service=orchestrator_service,
         job_service=job_service,
-        bjj_coach_service=BJJCoachService(runtime_config=runtime_config),
-        literary_service=LiteraryService(),
-        evaluation_service=EvaluationService(
-            trace_store=trace_store,
-            golden_case_repository=golden_case_repository,
-            repo_root=root,
-        ),
-        sft_service=SFTService(trace_store=trace_store),
-        current_profile=ProfileSummary(profile_version_id="profile_default"),
+        bjj_coach_service=bjj_coach_service,
+        literary_service=literary_service,
+        evaluation_service=None,
+        sft_service=sft_service,
+        current_profile=current_profile,
     )
+    app_state.evaluation_service = EvaluationService(
+        trace_store=trace_store,
+        golden_case_repository=golden_case_repository,
+        repo_root=root,
+        replay_runner=lambda traces, variant, use_frozen_evidence: sft_service.replay_eval_traces(
+            traces=traces,
+            variant=variant,
+            runtime_config=runtime_config,
+            current_profile=app_state.current_profile,
+            bjj_coach_service=app_state.bjj_coach_service,
+            literary_service=app_state.literary_service,
+            use_frozen_evidence=use_frozen_evidence,
+        ),
+    )
+    return app_state

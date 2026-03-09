@@ -216,8 +216,8 @@
 - replay/eval 中真正使用训练后的 policy artifact
 
 ### 建议讨论点
-- V1 的训练是否只要求 dry-run 可验证，还是要求真训练完成
-- policy artifact 是本地路径优先，还是抽象成 registry URI
+- 已确认：V1 的训练要求真训练完成，不能只停在 dry-run / train request / checkpoint manifest
+- 已确认：V1 训练产物以本地路径落地，但系统内统一通过 registry URI 引用；registry 先做本地映射实现
 
 ---
 

@@ -5,7 +5,7 @@ from typing import Any
 
 from pydantic import Field
 
-from server.app.core import PDABaseModel, RetrievalFilters, SFTExportRequest
+from server.app.core import PDABaseModel, PolicyTrainRequest, RetrievalFilters, SFTExportRequest
 
 
 class ChatTurnRequest(PDABaseModel):
@@ -70,3 +70,7 @@ class ProfilePatchRequest(PDABaseModel):
 
 class RunJobsRequest(PDABaseModel):
     job_types: list[str] = Field(default_factory=list)
+
+
+class SFTTrainAPIRequest(PolicyTrainRequest):
+    pass

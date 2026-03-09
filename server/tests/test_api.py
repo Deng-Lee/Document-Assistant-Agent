@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import json
 import unittest
 from tempfile import TemporaryDirectory
 from pathlib import Path
 
-from server.tests.support import create_test_app, dump_result, endpoint_map, sample_bjj_markdown, sample_notes_markdown
+from server.tests.support import create_test_app, dump_result, endpoint_map, make_trace_record, sample_bjj_markdown, sample_notes_markdown
 
 
 class APITests(unittest.TestCase):
@@ -225,3 +226,74 @@ class APITests(unittest.TestCase):
                 routes["PUT /api/profile"](ProfilePatchRequest(ruleset_default="NoGi"))
             )
             self.assertEqual(profile_after["ruleset_default"], "NoGi")
+
+    def test_sft_train_endpoint_activates_policy_and_replay_uses_it(self) -> None:
+        with TemporaryDirectory() as tmp:
+            app = create_test_app(tmp)
+            routes = endpoint_map(app)
+
+            from server.app.api.models import ReplayRequest, SFTTrainAPIRequest
+            from server.app.core import SFTExportRequest
+            from server.app.observability import build_generation_input_snapshot, build_prompt_snapshot
+            from server.app.core import ProfileSummary
+
+            trace = make_trace_record(trace_id="trace_policy_api")
+            input_snapshot = build_generation_input_snapshot(
+                task=trace.request_log.task,
+                query_original=trace.retrieval_log.retrieval_plan.query_original if trace.retrieval_log.retrieval_plan else "",
+                query_clean=trace.retrieval_log.retrieval_plan.query_text if trace.retrieval_log.retrieval_plan else "",
+                confirmed_slots=trace.request_log.confirmed_slots,
+                coach_clarify_round=trace.generation_log.output.get("reasoning_status", {}).get("coach_clarify_round", 0),
+                coach_pending_slot=None,
+                profile_summary=ProfileSummary(profile_version_id=trace.request_log.profile_version_id or "profile_test"),
+                frozen_evidence_pack=trace.evidence_log,
+            )
+            trace.generation_log.input_snapshot = input_snapshot
+            trace.generation_log.prompt_snapshot = build_prompt_snapshot(input_snapshot)
+            app.state.pda.trace_store.write_trace(trace)
+            export_payload = dump_result(routes["/api/sft/export"](SFTExportRequest(trace_filter={})))
+            export_dir = Path(export_payload["export_path"])
+            exported = [json.loads(line) for line in (export_dir / "dataset_export.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
+            rows = []
+            for sample in exported:
+                target_output = dict(sample["baseline_output"])
+                target_output["observations"][0]["text"] = "api policy tuned observation"
+                rows.append(
+                    {
+                        "trace_id": sample["trace_id"],
+                        "input": {
+                            "task": sample["profile_summary"].get("task"),
+                            "query_original": sample["profile_summary"].get("query_original", ""),
+                            "query_clean": sample["profile_summary"].get("query_clean", ""),
+                            "confirmed_slots": sample["confirmed_slots"],
+                            "coach_pending_slot": sample["profile_summary"].get("coach_pending_slot"),
+                            "profile_summary": sample["profile_summary"],
+                            "gate_decision": sample["gate_decision"],
+                            "coach_clarify_round": sample["coach_clarify_round"],
+                            "allowed_evidence_ids": sample["allowed_evidence_ids"],
+                            "evidence_pack_selected": sample["evidence_pack_selected"],
+                        },
+                        "target_output": target_output,
+                    }
+                )
+            train_path = export_dir / "train.jsonl"
+            train_path.write_text("\n".join(json.dumps(row, ensure_ascii=False) for row in rows) + "\n", encoding="utf-8")
+
+            train_payload = dump_result(
+                routes["/api/sft/train"](
+                    SFTTrainAPIRequest(
+                        train_path=str(train_path),
+                        output_path=str(Path(tmp) / "policy_ckpt"),
+                        base_model="mock-bjj-base",
+                        dry_run=False,
+                        activate=True,
+                    )
+                )
+            )
+            self.assertTrue(train_payload["checkpoint"]["policy_model_ref"].startswith("policy://"))
+            self.assertEqual(train_payload["active_policy_ref"], train_payload["checkpoint"]["policy_model_ref"])
+
+            replay_payload = dump_result(
+                routes["/api/replay/{trace_id}"]("trace_policy_api", ReplayRequest(model_variant="policy"))
+            )
+            self.assertIn("api policy tuned observation", json.dumps(replay_payload["final_answer"], ensure_ascii=False))

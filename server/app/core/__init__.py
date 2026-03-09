@@ -53,7 +53,7 @@ from .retrieval import (
 )
 from .runtime_config import DEFAULT_RUNTIME_CONFIG, RuntimeConfigSnapshot, build_runtime_config
 from .schema_registry import export_contract_schemas
-from .sft import PolicyTrainRequest, SFTDatasetManifest, SFTExportRequest, SFTExportSample
+from .sft import PolicyCheckpointRecord, PolicyTrainRequest, SFTDatasetManifest, SFTExportRequest, SFTExportSample
 from .tracing import (
     GenerationInputSnapshot,
     GenerationLog,
@@ -122,6 +122,7 @@ __all__ = [
     "MODEL_PROFILE_ENV",
     "PDABaseModel",
     "PlanCheck",
+    "PolicyCheckpointRecord",
     "PolicyTrainRequest",
     "PromptSnapshot",
     "ProbeHit",

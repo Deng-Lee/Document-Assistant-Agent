@@ -13,6 +13,7 @@ from .responses import (
     RetrieveResponse,
     RunJobResponse,
     SFTExportResponse,
+    SFTTrainResponse,
     TracesListResponse,
 )
 from .state import AppState, create_app_state
@@ -32,6 +33,7 @@ __all__ = [
     "RetrieveResponse",
     "RunJobResponse",
     "SFTExportResponse",
+    "SFTTrainResponse",
     "TracesListResponse",
     "create_app",
     "create_app_state",
