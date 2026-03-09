@@ -190,11 +190,21 @@ def create_app(root_dir: str | Path | None = None) -> FastAPI:
                 task=orchestrator_outcome.execution_plan.task.value,
                 profile_version_id=state.current_profile.profile_version_id,
                 confirmed_slots=conversation.state.slots,
+                plan_check=orchestrator_outcome.plan_check,
                 execution_plan=orchestrator_outcome.execution_plan,
             )
             recorder.set_request_log(request_log)
             if orchestrator_outcome.probe_stats is not None:
                 recorder.set_retrieval_log(RetrievalLog(probe_stats=orchestrator_outcome.probe_stats))
+            if orchestrator_outcome.plan_check is not None and (
+                orchestrator_outcome.plan_check.need_replan or orchestrator_outcome.llm_replan_invoked
+            ):
+                recorder.add_event(
+                    "orchestrator.replan_llm",
+                    invoked=orchestrator_outcome.llm_replan_invoked,
+                    result=orchestrator_outcome.llm_replan_result,
+                    reason_codes=orchestrator_outcome.plan_check.reason_codes,
+                )
 
             if orchestrator_outcome.execution_plan.next_action.value == "WRITE_FLOW":
                 clarify = ClarifyRequest(

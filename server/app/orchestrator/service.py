@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pydantic import Field
-
 from server.app.core import (
     ClarifyDirective,
     ClarifySlot,
@@ -9,6 +7,7 @@ from server.app.core import (
     ExecutionPlan,
     ExecutionPlanExplain,
     NextAction,
+    PlanCheck,
     PDABaseModel,
     ProbeStats,
 )
@@ -18,6 +17,7 @@ from server.app.retrieval import RetrievalService
 from .guards import maybe_short_circuit_write_flow
 from .plan_builder import DeterministicPlanBuilder
 from .plan_check import PlanCheckService
+from .replanner import OrchestratorReplanner
 from .slot_parser import clarify_template_id, try_resolve_pending_slot
 from .state import ConversationState
 
@@ -25,7 +25,10 @@ from .state import ConversationState
 class OrchestratorOutcome(PDABaseModel):
     session_state: ConversationState
     execution_plan: ExecutionPlan
+    plan_check: PlanCheck | None = None
     probe_stats: ProbeStats | None = None
+    llm_replan_invoked: bool = False
+    llm_replan_result: str = "skipped"
 
 
 class OrchestratorService:
@@ -33,11 +36,13 @@ class OrchestratorService:
         self,
         retrieval_service: RetrievalService,
         runtime_config: RuntimeConfigSnapshot | None = None,
+        replanner: OrchestratorReplanner | None = None,
     ):
         self.retrieval_service = retrieval_service
         self.runtime_config = runtime_config or build_runtime_config()
         self.plan_check_service = PlanCheckService()
         self.plan_builder = DeterministicPlanBuilder()
+        self.replanner = replanner or OrchestratorReplanner(self.runtime_config)
 
     def route(
         self,
@@ -89,12 +94,24 @@ class OrchestratorService:
             user_message=user_message,
             runtime_config=self.runtime_config,
         )
-        execution_plan = self.plan_builder.build(
-            user_message=user_message,
-            state=state,
-            plan_check=plan_check,
-            probe_stats=probe_outcome.probe_stats,
-            runtime_config=self.runtime_config,
+        replan_attempt = None
+        if self.replanner.should_invoke(plan_check, state):
+            replan_attempt = self.replanner.replan(
+                user_message=user_message,
+                state=state,
+                plan_check=plan_check,
+                probe_stats=probe_outcome.probe_stats,
+            )
+        execution_plan = (
+            replan_attempt.execution_plan
+            if replan_attempt is not None and replan_attempt.execution_plan is not None
+            else self.plan_builder.build(
+                user_message=user_message,
+                state=state,
+                plan_check=plan_check,
+                probe_stats=probe_outcome.probe_stats,
+                runtime_config=self.runtime_config,
+            )
         )
         next_state = state.copy(deep=True)
         if execution_plan.next_action == NextAction.CLARIFY and execution_plan.clarify is not None:
@@ -108,7 +125,10 @@ class OrchestratorService:
         return OrchestratorOutcome(
             session_state=next_state,
             execution_plan=execution_plan,
+            plan_check=plan_check,
             probe_stats=probe_outcome.probe_stats,
+            llm_replan_invoked=replan_attempt.invoked if replan_attempt is not None else False,
+            llm_replan_result=replan_attempt.result if replan_attempt is not None else "skipped",
         )
 
     @staticmethod

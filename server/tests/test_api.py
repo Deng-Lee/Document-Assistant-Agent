@@ -121,6 +121,65 @@ class APITests(unittest.TestCase):
             traces = dump_result(routes["/api/traces"]())
             self.assertGreaterEqual(len(traces["traces"]), 1)
 
+    def test_replan_trace_event_and_plan_check_are_persisted(self) -> None:
+        with TemporaryDirectory() as tmp:
+            app = create_test_app(tmp)
+            routes = endpoint_map(app)
+            from server.app.core import (
+                ClarifyDirective,
+                ClarifySlot,
+                DomainType,
+                ExecutionPlan,
+                ExecutionPlanExplain,
+                NextAction,
+                PlanCheck,
+                TaskType,
+            )
+            from server.app.orchestrator import ConversationState, OrchestratorOutcome
+            from server.app.api.models import ChatTurnRequest
+
+            class _ReplanStub:
+                def route(self, user_message, session_state=None, entrypoint=None):
+                    return OrchestratorOutcome(
+                        session_state=session_state or ConversationState(),
+                        execution_plan=ExecutionPlan(
+                            task=TaskType.MIXED,
+                            domain=DomainType.MIXED,
+                            slots={},
+                            next_action=NextAction.CLARIFY,
+                            clarify=ClarifyDirective(
+                                slot=ClarifySlot.DOMAIN,
+                                question_template_id="ASK_DOMAIN_V1",
+                                options=["训练", "写作/阅读"],
+                            ),
+                            explain=ExecutionPlanExplain(reason_codes=["DOMAIN_UNCLEAR"], probe_used=True),
+                        ),
+                        plan_check=PlanCheck(
+                            domain=DomainType.MIXED,
+                            task_hint=TaskType.MIXED,
+                            need_replan=True,
+                            need_clarify=False,
+                            confidence_hint=0.4,
+                            reason_codes=["DOMAIN_UNCLEAR"],
+                        ),
+                        llm_replan_invoked=True,
+                        llm_replan_result="success",
+                    )
+
+            app.state.pda.orchestrator_service = _ReplanStub()
+            response = dump_result(
+                routes["/api/chat/turn"](
+                    ChatTurnRequest(user_message="最近写作状态很差，也想复盘训练节奏。")
+                )
+            )
+
+            trace_payload = dump_result(routes["/api/traces/{trace_id}"](response["trace_id"]))
+            self.assertIsNotNone(trace_payload["request_log"]["plan_check"])
+            replan_events = [event for event in trace_payload["events"] if event["name"] == "orchestrator.replan_llm"]
+            self.assertEqual(len(replan_events), 1)
+            self.assertTrue(replan_events[0]["attributes"]["invoked"])
+            self.assertEqual(replan_events[0]["attributes"]["result"], "success")
+
     def test_management_endpoints_return_typed_payloads(self) -> None:
         with TemporaryDirectory() as tmp:
             app = create_test_app(tmp)

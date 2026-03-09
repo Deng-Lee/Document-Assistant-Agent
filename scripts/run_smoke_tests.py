@@ -27,28 +27,40 @@ def main() -> None:
         sys.path.insert(0, str(repo_root))
 
     from server.app.core import (
+        ClarifyDirective,
+        ClarifySlot,
         CharRange,
         ChunkMetadataDigest,
         ChunkRecord,
         ChunkType,
         Distance,
+        DomainType,
         DocumentRecord,
         DocumentType,
         DocVersionRecord,
         EntryPoint,
         EvalRunRequest,
+        EvidenceStrength,
         EvidencePack,
         GenerationLog,
         LineRange,
         ModelVariant,
         Orientation,
+        PlanCheck,
         ProfileSummary,
         RequestLog,
         RetrievalLog,
+        RetrievalFilters,
+        ProbeStats,
         RuntimeConfigSnapshot,
         SFTExportRequest,
         SourceLocator,
+        TaskType,
+        TimeSignal,
         TraceRecord,
+        ExecutionPlan,
+        ExecutionPlanExplain,
+        NextAction,
         active_model_profile_name,
         export_contract_schemas,
     )
@@ -209,6 +221,7 @@ def main() -> None:
         clarify_outcome = orchestrator.route("龟防怎么破解？我总是被人拉回去。")
         assert clarify_outcome.execution_plan.next_action.value == "CLARIFY"
         assert clarify_outcome.session_state.pending_slot is not None
+        assert clarify_outcome.llm_replan_invoked is False
 
         follow_up = orchestrator.route(
             "下位",
@@ -220,6 +233,24 @@ def main() -> None:
         )
         assert follow_up.session_state.pending_slot is None
         assert follow_up.execution_plan.next_action.value in {"RETRIEVE", "CLARIFY"}
+
+        mixed_outcome = OrchestratorService(
+            _SmokeRetrievalService(
+                ProbeStats(
+                    k=2,
+                    probe_query_text="最近写作状态很差，也想复盘训练节奏。",
+                    probe_filters=RetrievalFilters(),
+                    doc_type_hist={"BJJ": 1, "NOTES": 1, "p_bjj": 0.5, "p_notes": 0.5},
+                    slot_value_hist={"position": {}, "orientation": {}, "goal": {}},
+                    slot_entropy=0.0,
+                    evidence_strength=EvidenceStrength(value=0.8, headness=0.8, coherence=0.8),
+                    time_signal=TimeSignal(value=False),
+                )
+            )
+        ).route("最近写作状态很差，也想复盘训练节奏。")
+        assert mixed_outcome.execution_plan.next_action.value == "CLARIFY"
+        assert mixed_outcome.execution_plan.clarify.slot.value == "domain"
+        assert mixed_outcome.llm_replan_invoked is False
         print("orchestrator_smoke_ok")
 
         rich_bjj_markdown = """---\n"""
@@ -303,6 +334,41 @@ def main() -> None:
 
         api_root = root / "api_app"
         api_app = create_app(api_root)
+        original_orchestrator_service = api_app.state.pda.orchestrator_service
+        class _APIReplanStub:
+            def route(self, user_message, session_state=None, entrypoint=None):
+                return {
+                    "session_state": session_state or ConversationState(),
+                    "execution_plan": ExecutionPlan(
+                        task=TaskType.MIXED,
+                        domain=DomainType.MIXED,
+                        slots={},
+                        next_action=NextAction.CLARIFY,
+                        clarify=ClarifyDirective(
+                            slot=ClarifySlot.DOMAIN,
+                            question_template_id="ASK_DOMAIN_V1",
+                            options=["训练", "写作/阅读"],
+                        ),
+                        explain=ExecutionPlanExplain(reason_codes=["DOMAIN_UNCLEAR"], probe_used=True),
+                    ),
+                    "plan_check": PlanCheck(
+                        domain=DomainType.MIXED,
+                        task_hint=TaskType.MIXED,
+                        need_replan=True,
+                        need_clarify=False,
+                        confidence_hint=0.4,
+                        reason_codes=["DOMAIN_UNCLEAR"],
+                    ),
+                    "probe_stats": None,
+                    "llm_replan_invoked": True,
+                    "llm_replan_result": "success",
+                }
+        from server.app.orchestrator import OrchestratorOutcome
+
+        class _APIReplanOutcomeStub:
+            def route(self, user_message, session_state=None, entrypoint=None):
+                return OrchestratorOutcome(**_APIReplanStub().route(user_message, session_state, entrypoint))
+
         api_routes = {}
         for route in api_app.routes:
             if not hasattr(route, "path") or not hasattr(route, "endpoint"):
@@ -354,6 +420,13 @@ def main() -> None:
         api_retrieve = _to_dict(api_routes["/api/retrieve"](RetrieveRequest(query_text="maze mirror", mode="full")))
         assert api_retrieve["evidence_pack"]["items"]
         assert api_retrieve["retrieval_log"]["dense_count"] >= 1
+
+        api_app.state.pda.orchestrator_service = _APIReplanOutcomeStub()
+        api_replan_chat = _to_dict(api_routes["/api/chat/turn"](ChatTurnRequest(user_message="最近写作状态很差，也想复盘训练节奏。")))
+        api_replan_trace = _to_dict(api_routes["/api/traces/{trace_id}"](api_replan_chat["trace_id"]))
+        assert api_replan_trace["request_log"]["plan_check"] is not None
+        assert any(event["name"] == "orchestrator.replan_llm" for event in api_replan_trace["events"])
+        api_app.state.pda.orchestrator_service = original_orchestrator_service
 
         api_chat = _to_dict(api_routes["/api/chat/turn"](ChatTurnRequest(user_message="迷宫和镜子有什么联系？")))
         assert api_chat["response_type"] == "final_answer"
@@ -473,6 +546,19 @@ def _to_dict(model):
     if hasattr(model, "dict"):
         return model.dict(by_alias=True)
     return dict(model)
+
+
+class _SmokeRetrievalOutcome:
+    def __init__(self, probe_stats):
+        self.probe_stats = probe_stats
+
+
+class _SmokeRetrievalService:
+    def __init__(self, probe_stats):
+        self._probe_stats = probe_stats
+
+    def retrieve(self, query_text, filters_hint=None, mode="probe", top_k=None):
+        return _SmokeRetrievalOutcome(self._probe_stats)
 
 
 if __name__ == "__main__":
