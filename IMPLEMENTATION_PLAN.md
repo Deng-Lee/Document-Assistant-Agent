@@ -1,223 +1,223 @@
-# IMPLEMENTATION_PLAN
+# IMPLEMENTATION_PLAN（实现计划）
 
-## Objective
-Build the V1 Personal Document Assistant defined in `DEV_SPEC.md` as a replayable, locally deployable single-user system with:
-- Hybrid RAG over BJJ logs and notes
-- auditable Evidence Pack and citation discipline
-- Orchestrator clarification loop
-- BJJ and Literary agents
-- end-to-end observability, replay, offline evaluation, and Policy SFT
+## 目标（Objective）
+按照 `DEV_SPEC.md` 定义，构建 V1 Personal Document Assistant：一个**可回放（replayable）**、**可本地部署（locally deployable）**的单用户系统，具备：
+- 面向 BJJ 训练日志与 Notes 的 Hybrid RAG
+- 可审计的 Evidence Pack 与引用纪律（citation discipline）
+- Orchestrator 的澄清循环（clarification loop）
+- BJJ 与 Literary 两类 Agent
+- 端到端可观测性、回放、离线评估，以及 Policy SFT
 
-## Current Baseline
-- Repository is in spec-only state; no `server/`, `web/`, `datasets/`, or `data/` scaffold exists yet.
-- Planning assumptions are recorded in `DECISIONS.md`.
-- No blocking confirmation items were found in `OPEN_QUESTIONS.json`.
+## 当前基线（Current Baseline）
+- 当前仓库处于“仅规格说明（spec-only）”状态；尚未创建 `server/`、`web/`、`datasets/` 或 `data/` 等脚手架目录。
+- 规划假设已记录在 `DECISIONS.md`。
+- 在 `OPEN_QUESTIONS.json` 中未发现阻塞性的确认项（blocking confirmation items）。
 
-## Delivery Principles
-- Implement Phase 1 / V1 only; defer V1.1+ items unless they are required for replayability or validator safety.
-- Keep module dependencies one-way: `core -> storage -> ingestion/retrieval/orchestrator/agents -> observability/evaluation/sft -> api/ui`.
-- Every behavior-affecting threshold or prompt must be versioned and captured in `runtime_config_snapshot`.
-- Prefer deterministic logic for routing, gating, validation, replay, and evaluation; use LLMs only where the spec explicitly requires them.
-- Do not scaffold or implement missing directories until explicitly requested by the user.
+## 交付原则（Delivery Principles）
+- 仅实现 Phase 1 / V1；除非为可回放性或 validator 安全性所必需，否则推迟 V1.1+ 项。
+- 保持模块依赖单向：`core -> storage -> ingestion/retrieval/orchestrator/agents -> observability/evaluation/sft -> api/ui`。
+- 所有会影响行为的阈值或 prompt 必须版本化，并写入 `runtime_config_snapshot`。
+- 优先使用确定性逻辑处理：路由、gate、校验、回放、评估；仅在 spec 明确要求处使用 LLM。
+- 在用户明确请求之前，不要脚手架化或实现缺失目录。
 
-## Build Order
+## 构建顺序（Build Order）
 
-### 1. Core Contracts & Schemas
-Scope:
-- Define canonical schemas in `server/app/core` for:
-  - runtime config and version ids
-  - document, doc version, chunk, embedding version, profile version
+### 1. Core Contracts & Schemas（核心契约与 Schema）
+范围（Scope）：
+- 在 `server/app/core` 中定义权威 schema，用于：
+  - runtime config 与 version ids
+  - document、doc version、chunk、embedding version、profile version
   - `source_locators`
-  - retrieval plan, probe stats, plan check, execution plan
-  - Evidence Pack and rank signals
-  - chat response union: `clarify_request | final_answer`
-  - BJJ answer JSON modes: `FULL | AMBIGUOUS_FINAL | LOW_EVIDENCE`
-  - trace/span/event payloads
-  - eval case/result and SFT export sample
-- Define enums and error codes for BJJ validation, gate reasons, clarify slots, task/domain values, and job status.
-- Define `runtime_config` defaults for all spec thresholds and versioned prompt ids.
+  - retrieval plan、probe stats、plan check、execution plan
+  - Evidence Pack 与 rank signals
+  - chat 响应联合类型：`clarify_request | final_answer`
+  - BJJ answer JSON modes：`FULL | AMBIGUOUS_FINAL | LOW_EVIDENCE`
+  - trace/span/event 的 payload
+  - eval case/result 与 SFT export sample
+- 定义枚举与错误码：BJJ 校验、gate reasons、clarify slots、task/domain 值、job status。
+- 为所有 spec 阈值与版本化 prompt ids 定义 `runtime_config` 默认值。
 
-Implementation notes:
-- Use Pydantic models plus JSON Schema export.
-- Treat `doc_version_id`, `embedding_version_id`, `prompt_version`, `policy_version`, and `trace_capture_level` as required on the trace path.
-- Keep contracts backend-owned; frontend types should be generated or mirrored from the same source later.
+实现说明（Implementation notes）：
+- 使用 Pydantic models，并支持导出 JSON Schema。
+- 将 `doc_version_id`、`embedding_version_id`、`prompt_version`、`policy_version`、`trace_capture_level` 视为 trace 链路的必填项。
+- 契约由后端拥有（backend-owned）；前端类型应后续由同一源生成或镜像，避免漂移。
 
-Acceptance criteria:
-- Chat turn output is representable as exactly one of `clarify_request` or `final_answer`.
-- BJJ answer schema encodes the validator rules from Chapter 7 and `contracts.md`.
-- Evidence Pack contract requires `evidence_id`, `doc_id`, `doc_version_id`, `locator`, `safe_summary`, `metadata_digest`, and `rank_signals`.
-- Trace contract requires `runtime_config_snapshot`, `request_log`, `retrieval_log`, `evidence_log`, and `generation_log`.
+验收标准（Acceptance criteria）：
+- Chat turn 的输出必须能被表达为**且仅能表达为** `clarify_request` 或 `final_answer` 之一。
+- BJJ answer schema 必须编码第 7 章与 `contracts.md` 中的 validator 规则。
+- Evidence Pack 契约必须要求：`evidence_id`、`doc_id`、`doc_version_id`、`locator`、`safe_summary`、`metadata_digest`、`rank_signals`。
+- Trace 契约必须要求：`runtime_config_snapshot`、`request_log`、`retrieval_log`、`evidence_log`、`generation_log`。
 
-### 2. Storage Adapters
-Scope:
-- Implement repository and adapter interfaces for:
-  - SQLite metadata store
-  - SQLite FTS5 index
-  - file store for raw markdown snapshots
-  - Chroma vector store with `embedding_version_id` isolation
-  - trace store for structural logs and optional excerpt snapshots
-  - job state persistence
-- Create storage schema and migrations for documents, versions, chunks, embeddings, traces, eval runs, profiles, and jobs.
-- Establish the single-source-of-truth split from the spec:
-  - SQLite for metadata/logging/filtering
-  - file store for raw source snapshots
-  - Chroma for dense retrieval
+### 2. Storage Adapters（存储适配层）
+范围（Scope）：
+- 实现以下仓储与适配器接口：
+  - SQLite 元信息存储（metadata store）
+  - SQLite FTS5 索引
+  - raw markdown 快照的 file store
+  - Chroma 向量库（按 `embedding_version_id` 隔离）
+  - trace store（结构化 logs + 可选 excerpt snapshots）
+  - job 状态持久化
+- 为 documents、versions、chunks、embeddings、traces、eval runs、profiles、jobs 建立存储 schema 与迁移（migrations）。
+- 按 spec 建立单一真相（single-source-of-truth）划分：
+  - SQLite：元信息/日志/过滤
+  - file store：原始源文件快照
+  - Chroma：dense retrieval
 
-Implementation notes:
-- Bind every citation and locator to `doc_version_id`.
-- Design reindex/reembed operations at `doc_version_id | doc_id | all` scope.
-- Persist enough metadata to rebuild Evidence Pack and frozen replay without live re-retrieval.
+实现说明（Implementation notes）：
+- 每条 citation 与 locator 都必须绑定到 `doc_version_id`。
+- reindex/reembed 必须支持 `doc_version_id | doc_id | all` 的作用域。
+- 必须持久化足够的信息，使 Evidence Pack 与 frozen replay 可重建，而无需在线重检索。
 
-Acceptance criteria:
-- FTS5 and Chroma adapters can be addressed through stable repository interfaces instead of leaking storage-specific logic upward.
-- Embedding data is isolated by `embedding_version_id`.
-- Trace retrieval can reconstruct a frozen evidence set without querying live indexes.
-- Maintenance operations can enumerate impacted chunks before execution.
+验收标准（Acceptance criteria）：
+- FTS5 与 Chroma 适配器必须通过稳定的 repository interface 访问，避免把存储细节向上泄漏。
+- embedding 数据按 `embedding_version_id` 隔离。
+- trace 回读能在不查询在线索引的情况下重建 frozen evidence 集合。
+- 运维操作在执行前能枚举受影响的 chunks（用于 dry-run/成本评估）。
 
-### 3. Ingestion + safe_summary Job
-Scope:
-- Implement markdown loader with newline normalization and `locator_index` generation.
-- Implement frontmatter-based doc type recognition (`BJJ` or `notes`).
-- Implement BJJ structured parser and validator for mandatory fields and enum constraints.
-- Implement NOTES structure extraction with heading path support.
-- Implement chunking:
-  - BJJ: one training record per chunk
-  - NOTES: semantic/section chunking with heading anchors
-- Implement `source_locators` resolution from loader-produced `locator_index`.
-- Implement raw/clean dual-flow text derivation:
-  - raw snapshot for replay/excerpts
-  - clean text for FTS and embedding
-- Implement `safe_summary` background job enqueue, retry, rebuild, and persistence.
+### 3. Ingestion + safe_summary Job（导入 + safe_summary 后台任务）
+范围（Scope）：
+- 实现 markdown loader（换行归一化 + `locator_index` 生成）。
+- 实现基于 frontmatter 的 doc type 识别（`BJJ` 或 `notes`）。
+- 实现 BJJ 结构化 parser 与 validator（必填字段 + 枚举约束）。
+- 实现 NOTES 结构抽取（支持 heading path）。
+- 实现 chunking：
+  - BJJ：每条训练记录一个 chunk
+  - NOTES：语义/段落切分并携带 heading anchors
+- 实现基于 loader 产出的 `locator_index` 生成 `source_locators`。
+- 实现 raw/clean 双流派生文本：
+  - raw snapshot 用于 replay/excerpts
+  - clean text 用于 FTS 与 embedding
+- 实现 `safe_summary` 后台任务的入队、重试、重建、持久化。
 
-Implementation notes:
-- BJJ ingestion is strict and template-driven in V1.
-- Invalid BJJ records must fail before indexing and emit structured error codes.
-- Ingestion must persist `DocVersion`, file snapshot, chunks, and index inputs atomically enough to avoid half-ingested versions.
+实现说明（Implementation notes）：
+- V1 的 BJJ ingestion 是严格且模板驱动的（strict and template-driven）。
+- 非法 BJJ 记录必须在索引前失败，并输出结构化错误码。
+- 导入必须以足够“原子性”的方式持久化：`DocVersion`、文件快照、chunks 与索引输入，避免半导入版本。
 
-Acceptance criteria:
-- `POST /api/ingest/file`, `POST /api/ingest/dir`, `POST /api/record/bjj`, and `POST /api/record/notes` can all produce versioned chunk artifacts.
-- Every chunk has stable `source_locators` backed by `doc_version_id`.
-- `safe_summary` can be rebuilt per chunk through a job interface.
-- BJJ records with missing `position`, `orientation`, `distance`, `goal`, `your_action`, or `opponent_response` are rejected deterministically.
+验收标准（Acceptance criteria）：
+- `POST /api/ingest/file`、`POST /api/ingest/dir`、`POST /api/record/bjj`、`POST /api/record/notes` 均可产出版本化的 chunk 产物。
+- 每个 chunk 都有绑定 `doc_version_id` 的稳定 `source_locators`。
+- `safe_summary` 可通过 job 接口按 chunk 重建。
+- 缺失 `position`、`orientation`、`distance`、`goal`、`your_action`、`opponent_response` 的 BJJ 记录必须被确定性拒绝。
 
-### 4. Retrieval + Evidence Pack
-Scope:
-- Implement query parsing into `retrieval_plan`.
-- Implement structured filtering over SQLite fields.
-- Implement BM25 retrieval over FTS5.
-- Implement dense retrieval over Chroma.
-- Implement RRF fusion, per-document diversity, token-budget trimming, and rank logging.
-- Build Evidence Pack as the only evidence source for downstream generation and replay.
+### 4. Retrieval + Evidence Pack（检索 + Evidence Pack）
+范围（Scope）：
+- 实现 query parsing → `retrieval_plan`。
+- 实现基于 SQLite 字段的 structured filtering。
+- 实现基于 FTS5 的 BM25 retrieval。
+- 实现基于 Chroma 的 dense retrieval。
+- 实现 RRF 融合、按文档多样性（per-document diversity）、token budget 裁剪，以及 rank logging。
+- 构建 Evidence Pack：作为下游生成与回放的唯一证据来源。
 
-Implementation notes:
-- V1 uses RRF rather than score-weighted fusion.
-- V1 uses histogram-only domain scoring during probe.
-- Log all application-side filtering and topK expansion so retrieval stays auditable.
+实现说明（Implementation notes）：
+- V1 使用 RRF，而不是 score-weighted fusion。
+- V1 在 probe 阶段采用 histogram-only 的 domain scoring。
+- 必须记录所有应用侧过滤与 topK 扩张，以确保检索可审计。
 
-Acceptance criteria:
-- `POST /api/retrieve` returns `retrieval_log` and `evidence_pack` with the contract fields defined in core schemas.
-- Evidence Pack preserves `doc_version_id` and precise locator data for every entry.
-- Filtering behavior is replay-visible, including discarded counts and final surviving hits.
-- Pack building enforces `N_per_doc`, `M_docs` when possible, and token-budget-aware trimming.
+验收标准（Acceptance criteria）：
+- `POST /api/retrieve` 返回 `retrieval_log` 与 `evidence_pack`，字段满足 core schemas 的契约定义。
+- Evidence Pack 对每条 entry 保留 `doc_version_id` 与精确 locator 数据。
+- 过滤行为在回放中可见（包含丢弃数量与最终保留 hits）。
+- Pack 构建尽量强制 `N_per_doc`、`M_docs`，并做 token-budget-aware 裁剪。
 
-### 5. Orchestrator (probe/replan/clarify)
-Scope:
-- Implement conversation state for:
+### 5. Orchestrator（probe/replan/clarify）
+范围（Scope）：
+- 实现对话状态（conversation state），包含：
   - `pending_slot`
-  - orchestrator `clarify_round` up to 2
+  - orchestrator `clarify_round`（最多 2）
   - confirmed slots
-  - coach clarify state namespace
-- Implement Hard Guard A for write-path short-circuit.
-- Implement pending-slot short-circuit parsing.
-- Implement PROBE retrieval and `probe_stats`.
-- Implement `plan_check`.
-- Implement deterministic plan builder.
-- Implement one-shot LLM replan with schema validation and deterministic fallback.
-- Implement executor handoff into retrieval and agents.
+  - coach clarify state 命名空间
+- 实现 Hard Guard A（写入路径 short-circuit）。
+- 实现 pending-slot short-circuit parsing。
+- 实现 PROBE retrieval 与 `probe_stats`。
+- 实现 `plan_check`。
+- 实现 deterministic plan builder。
+- 实现一次性 LLM replan（带 schema 校验）+ 确定性 fallback。
+- 实现 executor，将控制流交给 retrieval 与 agents。
 
-Implementation notes:
-- Per `DECISIONS.md`, initial defaults are:
-  - minimal write-intent prefix list
+实现说明（Implementation notes）：
+- 按 `DECISIONS.md`，初始默认值为：
+  - 最小写入意图前缀词表（minimal write-intent prefix list）
   - `domain_score = p_bjj`
-  - `domain_score` thresholds `0.65 / 0.35`
+  - `domain_score` 阈值 `0.65 / 0.35`
   - `slot_entropy > 0.6`
   - `evidence_strength < 0.4`
-  - `MIXED` clarifies domain first when budget remains
-- Orchestrator may invoke at most one LLM per user turn.
-- Clarify responses must be template-driven, not free-form natural-language prompts.
+  - 当预算允许时，`MIXED` 先澄清 domain
+- 每个用户 turn 最多触发 1 次 LLM（Orchestrator 层）。
+- Clarify 必须模板化（template-driven），不能输出自由文本提问。
 
-Acceptance criteria:
-- `POST /api/chat/turn` can return either an orchestrator-originated `clarify_request` or proceed to retrieval.
-- Orchestrator never exceeds 2 core clarify rounds.
-- `ExecutionPlan` is always traceable, schema-valid, and stored in the trace.
-- LLM replan failure falls back to deterministic planning without breaking the turn.
+验收标准（Acceptance criteria）：
+- `POST /api/chat/turn` 可返回 Orchestrator 发起的 `clarify_request`，或继续走检索。
+- Orchestrator 不得超过 2 轮核心槽位澄清。
+- `ExecutionPlan` 必须始终可追溯、schema-valid，并写入 trace。
+- LLM replan 失败必须回退到 deterministic planning，并且不能让本轮崩掉。
 
-### 6. Agents (BJJ coach + literary)
-Scope:
-- Implement BJJ Coach pipeline:
+### 6. Agents（BJJ coach + literary）
+范围（Scope）：
+- 实现 BJJ Coach pipeline：
   - request semantics
   - evidence summary
   - evidence gate
-  - single-slot tactical clarification for `opponent_control`
+  - 针对 `opponent_control` 的单槽位战术澄清
   - mode-aware generation
   - validator
-  - repair once, then degrade deterministically
-- Implement Literary pipeline:
-  - NOTES-only retrieval consumption
+  - repair 一次，然后确定性降级（degrade）
+- 实现 Literary pipeline：
+  - 只消费 NOTES 域检索结果
   - top-1 `raw_excerpt` + top-2/3 `safe_summary` anchors
-  - prompt assembly with citation discipline
-- Implement provider abstraction for base vs policy model selection.
+  - prompt 组装与引用纪律
+- 实现 provider 抽象：支持 base vs policy 模型选择。
 
-Implementation notes:
-- BJJ Coach may only consume the frozen Evidence Pack supplied by retrieval.
-- `coach_clarify_round` is capped at 1.
-- Validator is product-critical, not optional cleanup.
+实现说明（Implementation notes）：
+- BJJ Coach 只能消费 retrieval 提供的 frozen Evidence Pack（不得扩大证据域）。
+- `coach_clarify_round` 上限为 1。
+- Validator 是产品关键路径（product-critical），不是可选清理步骤。
 
-Acceptance criteria:
-- BJJ output modes satisfy the Chapter 7 policy:
+验收标准（Acceptance criteria）：
+- BJJ 输出模式必须满足第 7 章策略：
   - `HIGH_EVIDENCE -> FULL`
-  - `AMBIGUOUS + clarify exhausted -> AMBIGUOUS_FINAL`
+  - `AMBIGUOUS + 澄清耗尽 -> AMBIGUOUS_FINAL`
   - `LOW_EVIDENCE -> LOW_EVIDENCE`
-- All user-history claims in BJJ mode cite allowed evidence ids or are marked generic.
-- `followup_question` never appears in final BJJ output.
-- Literary final answers return text plus anchors that point back to versioned citations.
+- BJJ 模式下所有“用户历史”断言必须引用 allowed evidence ids，或标记 generic。
+- 最终 BJJ 输出中绝不出现 `followup_question`。
+- Literary 最终答案返回文本 + anchors，anchors 必须指向版本化 citations。
 
-### 7. Observability (trace/span/event)
-Scope:
-- Implement trace/span/event models and persistence.
-- Instrument ingestion, record write, retrieval, orchestration, gate, LLM calls, validator, and jobs.
-- Capture `runtime_config_snapshot` and relevant version ids on every user-visible trace.
-- Implement trace detail and replay endpoints.
-- Implement `trace_capture_level` behavior for minimal vs debug storage.
+### 7. Observability（trace/span/event）
+范围（Scope）：
+- 实现 trace/span/event 模型与持久化。
+- 对导入、record 写入、检索、编排、gate、LLM 调用、validator、jobs 做打点。
+- 每个用户可见 trace 必须捕获 `runtime_config_snapshot` 与相关 version ids。
+- 实现 trace 详情与 replay 接口。
+- 实现 `trace_capture_level`：minimal vs debug 的存储行为。
 
-Implementation notes:
-- Default retention should favor structural logs plus locators and summaries.
-- Prompt bodies should be hashed/versioned by default; only debug-mode snapshots store more content.
-- Replay must support `model_variant=base|policy` on frozen evidence.
+实现说明（Implementation notes）：
+- 默认留存应偏向结构化日志 + locators + summaries。
+- prompt body 默认只存 hash/version；仅 debug mode 存更多内容。
+- replay 必须支持 frozen evidence 下的 `model_variant=base|policy` 对比。
 
-Acceptance criteria:
-- `GET /api/traces/{trace_id}` can reconstruct request path, evidence selection, generation output, and validator result.
-- `POST /api/replay/{trace_id}` can re-run generation against frozen evidence without live retrieval drift.
-- Trace events include stage transitions, clarify events, retrieval plan snapshots, and model/token/cost metadata.
-- Minimal mode avoids raw excerpt storage while preserving replay and citation auditing.
+验收标准（Acceptance criteria）：
+- `GET /api/traces/{trace_id}` 能重建请求路径、证据选择、生成输出与 validator 结果。
+- `POST /api/replay/{trace_id}` 能在不走在线检索的情况下基于 frozen evidence 重跑生成，避免 drift。
+- trace events 必须包含：stage transitions、clarify events、retrieval plan 快照、模型/token/cost 元数据。
+- minimal 模式避免存 raw excerpt，同时仍保留 replay 与 citation 审计所需信息。
 
-### 8. Evaluation (frozen replay + metrics + RAGAS + judge)
-Scope:
-- Define golden set storage under `datasets/golden`.
-- Implement offline replay runner for base/policy variants.
-- Implement hard metrics directly from traces and validator reports.
-- Implement RAGAS input construction for NOTES and rendered BJJ answers.
-- Implement optional LLM-as-judge and manual rubric integration.
-- Expose evaluation APIs and result views.
+### 8. Evaluation（frozen replay + metrics + RAGAS + judge）
+范围（Scope）：
+- 在 `datasets/golden` 下定义 golden set 存储。
+- 实现 base/policy variants 的离线 replay runner。
+- 从 traces 与 validator reports 直接计算 hard metrics。
+- 为 NOTES 与“渲染后的 BJJ 答案”构造 RAGAS 输入。
+- 实现可选的 LLM-as-judge 与人工 rubric 集成。
+- 提供评测 API 与结果视图。
 
-Implementation notes:
-- Frozen Evidence Replay is the default evaluation mode.
-- Live retrieval replay is optional and secondary.
-- Hard metrics are first-class because they reflect the product contract better than judge-only scoring.
+实现说明（Implementation notes）：
+- 默认评测模式为 Frozen Evidence Replay。
+- live retrieval replay 是可选且次要的。
+- hard metrics 是一等公民（first-class），因为它更贴近产品契约，而不是仅依赖 judge 打分。
 
-Acceptance criteria:
-- `POST /api/eval/run` can execute a named evaluation set and produce a persistent `eval_run_id`.
-- `GET /api/eval/results` reports:
+验收标准（Acceptance criteria）：
+- `POST /api/eval/run` 能执行命名评测集并产生持久化的 `eval_run_id`。
+- `GET /api/eval/results` 报告需包含：
   - schema compliance
   - mode-policy consistency
   - allowed citation accuracy
@@ -225,49 +225,50 @@ Acceptance criteria:
   - Plan C branch count
   - drill completeness
   - low-evidence safety proxy
-  - latency and cost summaries
-- Failure outputs are trace-linked so a user can drill down into the underlying replay.
+  - latency 与 cost 汇总
+- 所有失败输出必须 trace-linkable，便于 drill-down 到底层 replay。
 
-### 9. SFT (dataset export + revision + LoRA/QLoRA training + base/policy replay)
-Scope:
-- Implement trace-to-dataset export under `datasets/sft/v1/<date>/`.
-- Emit `manifest.json` plus JSONL sample rows containing runtime snapshot, evidence whitelist, selected evidence, baseline output, and validator report.
-- Define manual revision workflow producing `train.jsonl`.
-- Integrate LoRA/QLoRA training entrypoint and policy artifact registration.
-- Wire `policy` variant into replay and evaluation.
+### 9. SFT（dataset export + revision + LoRA/QLoRA training + base/policy replay）
+范围（Scope）：
+- 实现 trace → dataset 导出到 `datasets/sft/v1/<date>/`。
+- 产出 `manifest.json` + JSONL 样本行（包含 runtime snapshot、evidence whitelist、selected evidence、baseline output、validator report）。
+- 定义人工修订流程产出 `train.jsonl`。
+- 集成 LoRA/QLoRA 训练入口与 policy 产物注册（artifact registration）。
+- 将 `policy` variant 接入 replay 与 evaluation。
 
-Implementation notes:
-- SFT trains behavior policy, not BJJ knowledge.
-- Training input must stay aligned with online generation inputs.
-- Validator and fallback remain in production even after policy training.
+实现说明（Implementation notes）：
+- SFT 训练的是“行为策略（behavior policy）”，不是 BJJ 技术知识。
+- 训练输入必须与线上生成输入严格对齐。
+- 即使 policy 训练上线，生产环境仍保留 validator 与 fallback。
 
-Acceptance criteria:
-- `POST /api/sft/export` or equivalent export pipeline emits versioned dataset artifacts with `trace_id` preserved.
-- Training can be exercised in dry-run mode before any expensive run.
-- Replays and evals can compare `base` vs `policy` on frozen evidence.
-- Improvement and regression are visible through the same hard-metric report path used for base.
+验收标准（Acceptance criteria）：
+- `POST /api/sft/export`（或等价导出管线）产出版本化数据集产物，并保留 `trace_id`。
+- 训练可先以 dry-run 模式演练，再进行昂贵训练。
+- replay 与 eval 能在 frozen evidence 下对比 `base` vs `policy`。
+- 提升与回归都能通过同一条 hard-metric report 路径可视化（与 base 同口径）。
 
-## Cross-Cutting Acceptance Criteria
-- API response contract:
-  - Chat turns return exactly one of `clarify_request` or `final_answer`.
-  - Clarify payloads include `who`, `slot`, `options`, `template_id`, `round`, and `why`.
-  - Final BJJ answers are always schema-valid terminal objects.
-- Validator behavior:
-  - Run on every BJJ final answer.
-  - Attempt one repair pass only.
-  - If still invalid, degrade to deterministic `LOW_EVIDENCE`.
-- Replay guarantees:
-  - Frozen evidence replay must not depend on live retrieval.
-  - Every replayed turn includes the original `runtime_config_snapshot` plus override metadata.
-  - Citations always resolve against `doc_version_id`-bound locators.
-- Evaluation outputs:
-  - Each eval run stores metrics, configuration, timestamp, model variant, and trace links.
-  - Reports must support base/policy comparison without changing the metric definitions.
+## 跨模块验收标准（Cross-Cutting Acceptance Criteria）
+- API 响应契约：
+  - Chat turns 返回的必须且仅能是 `clarify_request` 或 `final_answer`。
+  - Clarify payload 必须包含：`who`、`slot`、`options`、`template_id`、`round`、`why`。
+  - 最终 BJJ answers 必须始终是 schema-valid 的终态对象（terminal objects）。
+- Validator 行为：
+  - 每个 BJJ final answer 必须运行 validator。
+  - 仅允许一次 repair 尝试。
+  - 若仍无效，则确定性降级到 `LOW_EVIDENCE`。
+- Replay 保证：
+  - Frozen evidence replay 不得依赖在线检索。
+  - 每次 replay turn 必须包含原始 `runtime_config_snapshot` 与 override 元数据。
+  - Citations 必须能基于绑定 `doc_version_id` 的 locators 解析。
+- Evaluation 输出：
+  - 每次 eval run 必须存储指标、配置、时间戳、模型 variant 与 trace links。
+  - 报告必须支持 base/policy 对比，且不改变指标定义。
 
-## Suggested Execution Sequence After Planning Approval
-1. Run scaffold dry-run only.
-2. Create core contracts and storage skeleton first.
-3. Bring ingestion and retrieval to a testable baseline before any agent generation.
-4. Add orchestrator and BJJ validator path before Literary polish.
-5. Enable traces and replay before large-scale evaluation or SFT export.
-6. Only then generate datasets, run LoRA/QLoRA dry-run, and compare base vs policy.
+## 计划确认后的建议执行顺序（Suggested Execution Sequence After Planning Approval）
+1. 仅运行 scaffold 的 dry-run。
+2. 优先搭建 core contracts 与 storage skeleton。
+3. 在 agent 生成之前，把 ingestion 与 retrieval 做到可测试的 baseline。
+4. 在 Literary 打磨之前，先打通 orchestrator + BJJ validator 关键链路。
+5. 在大规模评测或 SFT 导出之前，先把 traces 与 replay 打通。
+6. 最后再生成数据集，跑 LoRA/QLoRA dry-run，并对比 base vs policy。
+
