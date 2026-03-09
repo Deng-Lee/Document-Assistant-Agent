@@ -58,6 +58,7 @@ from .responses import (
     IngestFileResponse,
     IngestTextResponse,
     JobsListResponse,
+    ProfileHistoryResponse,
     ProfileResponse,
     RecordBJJResponse,
     RecordNotesResponse,
@@ -503,6 +504,11 @@ def create_app(root_dir: str | Path | None = None) -> FastAPI:
         state = _state(app)
         return ProfileResponse(**_dump(state.current_profile))
 
+    @app.get("/api/profile/history", response_model=ProfileHistoryResponse)
+    def get_profile_history() -> ProfileHistoryResponse:
+        state = _state(app)
+        return ProfileHistoryResponse(profiles=state.profile_repository.list_profiles())
+
     @app.put("/api/profile", response_model=ProfileResponse)
     def put_profile(request: ProfilePatchRequest) -> ProfileResponse:
         state = _state(app)
@@ -513,6 +519,8 @@ def create_app(root_dir: str | Path | None = None) -> FastAPI:
             forbidden_actions=[ProfileConstraint(**item) for item in request.forbidden_actions],
             preferences=[ProfileConstraint(**item) for item in request.preferences],
         )
+        state.profile_repository.upsert_profile(state.current_profile)
+        state.runtime_config.profile_version_id = state.current_profile.profile_version_id
         return ProfileResponse(**_dump(state.current_profile))
 
     return app

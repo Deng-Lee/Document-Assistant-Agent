@@ -25,6 +25,7 @@ from server.app.storage import (
     SQLiteJobRepository,
     SQLiteDocumentRepository,
     SQLiteGoldenCaseRepository,
+    SQLiteProfileRepository,
     SQLiteStore,
     StoragePaths,
 )
@@ -43,6 +44,7 @@ class AppState(PDABaseModel):
     document_repository: object
     golden_case_repository: object
     job_repository: object
+    profile_repository: object
     file_store: object
     trace_store: object
     ingestion_service: object
@@ -78,6 +80,7 @@ def create_app_state(root_dir: str | Path) -> AppState:
     document_repository.init_schema()
     golden_case_repository = SQLiteGoldenCaseRepository(sqlite_store)
     job_repository = SQLiteJobRepository(sqlite_store)
+    profile_repository = SQLiteProfileRepository(sqlite_store)
     file_store = LocalFileStore(storage_paths.filestore_dir)
     trace_store = JSONTraceStore(storage_paths.traces_dir)
     vector_store = ChromaVectorStoreAdapter(storage_paths.chroma_dir, collection_name="chunks")
@@ -92,6 +95,12 @@ def create_app_state(root_dir: str | Path) -> AppState:
     orchestrator_service = OrchestratorService(retrieval_service, runtime_config=runtime_config)
     job_service = JobService(document_repository, job_repository, runtime_config=runtime_config, vector_store=vector_store)
     current_profile = ProfileSummary(profile_version_id="profile_default")
+    persisted_profile = profile_repository.get_latest_profile()
+    if persisted_profile is None:
+        profile_repository.upsert_profile(current_profile, created_at="1970-01-01T00:00:00")
+    else:
+        current_profile = persisted_profile
+    runtime_config.profile_version_id = current_profile.profile_version_id
     bjj_coach_service = BJJCoachService(runtime_config=runtime_config)
     literary_service = LiteraryService()
     app_state = AppState(
@@ -101,6 +110,7 @@ def create_app_state(root_dir: str | Path) -> AppState:
         document_repository=document_repository,
         golden_case_repository=golden_case_repository,
         job_repository=job_repository,
+        profile_repository=profile_repository,
         file_store=file_store,
         trace_store=trace_store,
         ingestion_service=IngestionService(

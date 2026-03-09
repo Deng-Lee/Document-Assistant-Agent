@@ -10,6 +10,7 @@ from server.app.core import (
     GoldenCase,
     JobRecord,
     JobStatus,
+    ProfileSummary,
     TraceRecord,
 )
 
@@ -75,6 +76,16 @@ class JobRepository(Protocol):
         status: JobStatus,
         error_message: str | None = None,
     ) -> JobRecord | None: ...
+
+
+class ProfileRepository(Protocol):
+    def upsert_profile(self, profile: ProfileSummary, created_at: str | None = None) -> None: ...
+
+    def get_profile(self, profile_version_id: str) -> ProfileSummary | None: ...
+
+    def get_latest_profile(self) -> ProfileSummary | None: ...
+
+    def list_profiles(self, limit: int | None = None) -> list[ProfileSummary]: ...
 
 
 class VectorStore(Protocol):

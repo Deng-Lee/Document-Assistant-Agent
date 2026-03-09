@@ -74,6 +74,7 @@ def main() -> None:
         IngestDirRequest,
         IngestFileRequest,
         IngestTextRequest,
+        ProfilePatchRequest,
         ReplayRequest,
         RetrieveRequest,
         RunJobsRequest,
@@ -499,6 +500,14 @@ def main() -> None:
             assert api_policy_replay["trace_id"]
         api_profile = _to_dict(api_routes["GET /api/profile"]())
         assert api_profile["profile_version_id"]
+        api_profile_updated = _to_dict(api_routes["PUT /api/profile"](ProfilePatchRequest(ruleset_default="NoGi")))
+        assert api_profile_updated["ruleset_default"] == "NoGi"
+        api_profile_history = _to_dict(api_routes["/api/profile/history"]())
+        assert len(api_profile_history["profiles"]) >= 2
+        from server.app.api.state import create_app_state
+        reloaded_state = create_app_state(api_root)
+        assert reloaded_state.current_profile.profile_version_id == api_profile_updated["profile_version_id"]
+        assert reloaded_state.current_profile.ruleset_default == "NoGi"
         print("api_smoke_ok")
 
         trace_store2 = JSONTraceStore(root / "traces_observability")

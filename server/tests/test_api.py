@@ -226,6 +226,12 @@ class APITests(unittest.TestCase):
                 routes["PUT /api/profile"](ProfilePatchRequest(ruleset_default="NoGi"))
             )
             self.assertEqual(profile_after["ruleset_default"], "NoGi")
+            profile_history = dump_result(routes["/api/profile/history"]())
+            self.assertGreaterEqual(len(profile_history["profiles"]), 2)
+            self.assertEqual(profile_history["profiles"][0]["profile_version_id"], profile_after["profile_version_id"])
+            updated_chat = dump_result(routes["/api/chat/turn"](ChatTurnRequest(user_message="迷宫和镜子还能怎么写？")))
+            updated_trace = dump_result(routes["/api/traces/{trace_id}"](updated_chat["trace_id"]))
+            self.assertEqual(updated_trace["request_log"]["profile_version_id"], profile_after["profile_version_id"])
 
     def test_sft_train_endpoint_activates_policy_and_replay_uses_it(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -297,3 +303,21 @@ class APITests(unittest.TestCase):
                 routes["/api/replay/{trace_id}"]("trace_policy_api", ReplayRequest(model_variant="policy"))
             )
             self.assertIn("api policy tuned observation", json.dumps(replay_payload["final_answer"], ensure_ascii=False))
+
+    def test_profile_persistence_survives_app_restart_and_keeps_history(self) -> None:
+        with TemporaryDirectory() as tmp:
+            app = create_test_app(tmp)
+            routes = endpoint_map(app)
+
+            from server.app.api.models import ProfilePatchRequest
+            from server.app.api.state import create_app_state
+
+            updated = dump_result(routes["PUT /api/profile"](ProfilePatchRequest(ruleset_default="NoGi")))
+            self.assertEqual(updated["ruleset_default"], "NoGi")
+
+            reloaded = create_app_state(tmp)
+            self.assertEqual(reloaded.current_profile.profile_version_id, updated["profile_version_id"])
+            self.assertEqual(reloaded.current_profile.ruleset_default, "NoGi")
+            history = reloaded.profile_repository.list_profiles()
+            self.assertGreaterEqual(len(history), 2)
+            self.assertEqual(history[0].profile_version_id, updated["profile_version_id"])

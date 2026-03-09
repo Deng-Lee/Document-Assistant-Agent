@@ -4,12 +4,19 @@ from .interfaces import (
     FileStore,
     GoldenCaseRepository,
     JobRepository,
+    ProfileRepository,
     TraceStore,
     VectorStore,
 )
 from .paths import StoragePaths
 from .sqlite_schema import ALL_SQLITE_STATEMENTS
-from .sqlite_store import SQLiteDocumentRepository, SQLiteGoldenCaseRepository, SQLiteJobRepository, SQLiteStore
+from .sqlite_store import (
+    SQLiteDocumentRepository,
+    SQLiteGoldenCaseRepository,
+    SQLiteJobRepository,
+    SQLiteProfileRepository,
+    SQLiteStore,
+)
 from .trace_store import JSONTraceStore
 from .vector_store import ChromaVectorStoreAdapter, EmbeddingUpsertRecord, VectorQueryMatch
 
@@ -26,9 +33,11 @@ __all__ = [
     "SQLiteDocumentRepository",
     "SQLiteGoldenCaseRepository",
     "SQLiteJobRepository",
+    "SQLiteProfileRepository",
     "SQLiteStore",
     "StoragePaths",
     "TraceStore",
+    "ProfileRepository",
     "VectorQueryMatch",
     "VectorStore",
 ]

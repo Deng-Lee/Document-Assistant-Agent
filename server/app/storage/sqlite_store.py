@@ -15,6 +15,7 @@ from server.app.core import (
     GoldenCase,
     JobRecord,
     JobStatus,
+    ProfileSummary,
 )
 
 from .serialization import model_to_dict, model_to_json, parse_json_blob
@@ -472,3 +473,65 @@ def _row_to_job(row) -> JobRecord:
     payload = dict(row)
     payload["payload"] = parse_json_blob(payload.pop("payload_json"))
     return JobRecord(**payload)
+
+
+class SQLiteProfileRepository:
+    def __init__(self, store: SQLiteStore):
+        self.store = store
+
+    def upsert_profile(self, profile: ProfileSummary, created_at: str | None = None) -> None:
+        with self.store.connect() as connection:
+            connection.execute(
+                """
+                INSERT OR REPLACE INTO profiles (profile_version_id, profile_summary_json, created_at)
+                VALUES (?, ?, ?)
+                """,
+                (
+                    profile.profile_version_id,
+                    model_to_json(profile),
+                    created_at or datetime.utcnow().isoformat(),
+                ),
+            )
+            connection.commit()
+
+    def get_profile(self, profile_version_id: str) -> ProfileSummary | None:
+        with self.store.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT profile_summary_json
+                FROM profiles
+                WHERE profile_version_id = ?
+                """,
+                (profile_version_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return ProfileSummary(**parse_json_blob(row["profile_summary_json"]))
+
+    def get_latest_profile(self) -> ProfileSummary | None:
+        with self.store.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT profile_summary_json
+                FROM profiles
+                ORDER BY created_at DESC, profile_version_id DESC
+                LIMIT 1
+                """
+            ).fetchone()
+        if row is None:
+            return None
+        return ProfileSummary(**parse_json_blob(row["profile_summary_json"]))
+
+    def list_profiles(self, limit: int | None = None) -> list[ProfileSummary]:
+        sql = """
+            SELECT profile_summary_json
+            FROM profiles
+            ORDER BY created_at DESC, profile_version_id DESC
+        """
+        parameters: list[object] = []
+        if limit is not None:
+            sql += " LIMIT ?"
+            parameters.append(limit)
+        with self.store.connect() as connection:
+            rows = connection.execute(sql, tuple(parameters)).fetchall()
+        return [ProfileSummary(**parse_json_blob(row["profile_summary_json"])) for row in rows]

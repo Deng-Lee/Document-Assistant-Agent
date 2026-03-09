@@ -240,7 +240,7 @@
 - trace 中稳定引用 `profile_version_id`
 
 ### 建议讨论点
-- V1 只保留 latest profile，还是允许 profile version history 查询
+- 已确认：V1 允许 profile version history 查询
 
 ---
 

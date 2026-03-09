@@ -123,3 +123,7 @@ class SFTTrainResponse(PDABaseModel):
 
 class ProfileResponse(ProfileSummary):
     pass
+
+
+class ProfileHistoryResponse(PDABaseModel):
+    profiles: list[ProfileSummary] = Field(default_factory=list)
