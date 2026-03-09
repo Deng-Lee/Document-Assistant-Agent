@@ -1,39 +1,137 @@
 # FACTS
 
 ## Repo Snapshot
-- Repo root contains `DEV_SPEC.md` and the `skills/pda-implementer/` skill assets.
-- Existing top-level folders: `.git/`, `skills/`.
-- Suggested product folders from `DEV_SPEC.md` do not exist yet: `server/`, `web/`, `datasets/`, `data/`, `scripts/`.
-
-## Already Implemented
-- Product specification exists in `DEV_SPEC.md`.
-- Skill support assets already exist under `skills/pda-implementer/`:
-  - `scripts/extract_open_questions.py`
-  - `scripts/scaffold_repo.py`
-  - `scripts/export_sft_dataset.py`
-  - `scripts/train_policy_lora.py`
-  - `scripts/run_eval.py`
-  - `scripts/validate_bjj_output.py`
-  - reference docs for spec index, contracts, and SFT runbook
-
-## Missing Relative To V1 Spec
-- No backend application scaffold (`server/app/...`) is present.
-- No frontend scaffold (`web/...`) is present.
-- No runtime data directories (`data/sqlite`, `data/chroma`, `data/filestore`, `data/traces`) are present.
-- No versioned offline dataset directories (`datasets/golden`, `datasets/sft`) are present.
-- No repo-level runtime or dependency configuration is present (`pyproject.toml`, `requirements*.txt`, `package.json`, lockfiles, Dockerfiles` not found).
-- No tests, CI config, environment examples, or generated API/type contracts are present.
-
-## Runtime Constraints Discovered
-- Python is available enough to run local skill scripts that use the standard library.
-- No Python version pin is declared in-repo.
-- No Node.js version pin is declared in-repo.
-- No dependency manifest is present, so backend/frontend package choices are specified only in `DEV_SPEC.md`, not yet encoded in the repo.
-- Network-dependent setup is not yet represented in the repository and should be treated as future implementation work.
-
-## Planning Implication
-- This repository is currently in pre-scaffold/spec-only state.
-- The next valid artifacts per `pda-implementer` are:
+- Repo root 当前已包含 V1 实现骨架与运行数据目录：
+  - `server/`
+  - `web/`
+  - `scripts/`
+  - `datasets/`
+  - `data/`
+- Canonical docs 已存在：
+  - `DEV_SPEC.md`
+  - `DECISIONS.md`
   - `OPEN_QUESTIONS.json`
   - `IMPLEMENTATION_PLAN.md`
-- Implementation should assume greenfield scaffolding while preserving the existing skill assets and `DEV_SPEC.md`.
+  - `ARCHITECTURE_RULES.md`
+- 后端已具备可运行入口与依赖声明：
+  - `pyproject.toml`
+  - `python3 -m server.app.api --check`
+- 运行时数据目录已存在：
+  - `data/sqlite`
+  - `data/chroma`
+  - `data/filestore`
+  - `data/traces`
+  - `data/jobs`
+- 离线数据目录已存在：
+  - `datasets/golden`
+  - `datasets/sft`
+
+## Already Implemented
+- Backend module scaffold 已落地：
+  - `server/app/core`
+  - `server/app/storage`
+  - `server/app/ingestion`
+  - `server/app/retrieval`
+  - `server/app/orchestrator`
+  - `server/app/agents`
+  - `server/app/observability`
+  - `server/app/evaluation`
+  - `server/app/sft`
+  - `server/app/api`
+- Core contracts 已定义，包含 runtime config、documents/chunks、retrieval/evidence、trace、eval、SFT 等结构化 schema。
+- Storage 已落地：
+  - SQLite metadata + FTS5
+  - Local filestore
+  - JSON trace store
+  - SQLite jobs / golden cases / profiles
+  - 真实持久化 Chroma vector store
+- Ingestion 已支持：
+  - `POST /api/ingest/text`
+  - `POST /api/ingest/file`
+  - `POST /api/ingest/dir`
+  - `POST /api/record/bjj`
+  - `POST /api/record/notes`
+- Retrieval 已支持：
+  - structured filters
+  - BM25(FTS5)
+  - Dense(Chroma)
+  - RRF fusion
+  - Evidence Pack 组装
+- Orchestrator 已支持：
+  - probe
+  - plan_check
+  - deterministic planning
+  - clarify loop
+  - fake profile 下的 deterministic mock replan
+  - deterministic fallback telemetry
+- Agents 已支持：
+  - BJJ coach
+  - literary agent
+  - validator-safe generation path
+- Observability 已支持：
+  - structured trace/span/event
+  - trace detail
+  - frozen replay
+  - minimal/debug capture policy
+- Evaluation 已支持：
+  - repo-file golden set loader
+  - frozen replay eval
+  - hard metrics
+  - `real` profile 下 surrogate RAGAS / heuristic judge
+  - partial-result handling
+- SFT 已支持：
+  - dataset export
+  - train row build
+  - local policy artifact training/registration
+  - policy replay/eval wiring
+- API 与本地 UI 已支持：
+  - FastAPI endpoints
+  - 静态 web shell
+  - health / ingest / chat / traces / replay / eval / sft / profile flows
+- Tests 与 smoke 已存在：
+  - `server/tests/`
+  - `scripts/run_smoke_tests.py`
+  - `scripts/run_test_suite.py`
+
+## Remaining Relative To V1 Spec
+- 前端尚未达到 `DEV_SPEC.md` 目标形态：
+  - 当前 `web/` 是静态 shell
+  - 尚未接入 Next.js app
+  - 尚无 `package.json`、前端构建链、类型同步与页面级路由
+- Orchestrator 的 LLM replan 仍是部分实现：
+  - fake profile 有 deterministic mock replan
+  - `real` profile 仍返回 `provider_unavailable` 并回退 deterministic path
+- Evaluation 仍是部分实现：
+  - hard metrics、golden set、frozen replay 已有
+  - 但 RAGAS / judge 目前是本地 surrogate / heuristic 实现
+  - manual rubric 未接入
+- SFT 仍是部分实现：
+  - 当前训练后端为 `local_policy_memory_v1`
+  - 尚未接入 `DEV_SPEC.md` 预期的真实 LoRA/QLoRA 训练作业
+- 文档同步仍需持续维护：
+  - `FACTS.md` 已更新到当前状态
+  - 但仍需配合单独的完成度矩阵文档持续跟踪 done / partial / missing
+
+## Runtime Constraints Discovered
+- Python 运行环境可用，`chromadb` 当前环境中可导入并用于本地 persistent store。
+- 当前仓库已有 Python 依赖声明，但仍没有 Node.js 依赖清单或版本 pin。
+- `web/` 当前不是 Next.js 工程，因此还没有前端构建与运行时分离配置。
+- Chroma 在当前环境下可工作，但其上游依赖会抛出非阻塞性 warning：
+  - `read_write_lock.py` 的 `notifyAll()` deprecation warning
+- 为兼容 `numpy 2.x`，向量适配层里保留了 `np.NaN` 兼容补丁。
+- 网络依赖的真实 provider 能力尚未在仓库里形成可离线验证的闭环：
+  - real-profile replan provider
+  - 外部 RAGAS / judge provider
+  - 真实 LoRA/QLoRA 训练 backend
+
+## Planning Implication
+- 该仓库已不再是 greenfield / spec-only 状态。
+- 后端 V1 主链路已基本闭合，接下来的优先事项应聚焦于：
+  - Next.js frontend 接入
+  - `real` profile 下的真实 replan provider
+  - Evaluation 外部评测器接入
+  - 真实训练 backend 接入
+- 变更前应优先参考：
+  - `IMPLEMENTATION_PLAN.md`
+  - `to_do.md`
+  - `IMPLEMENTATION_STATUS.md`
