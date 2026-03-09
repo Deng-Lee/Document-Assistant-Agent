@@ -97,16 +97,27 @@ class EvaluationAndSFTTests(unittest.TestCase):
                 ],
             )
 
-            from server.app.core import EvalRunRequest, EvalStageResult, EvalStageStatus
+            from server.app.core import EvalMetricName, EvalMetricValue, EvalRunRequest, EvalStageResult, EvalStageStatus
             from server.app.evaluation import EvaluationService
 
             service = EvaluationService(
                 trace_store=trace_store,
                 golden_case_repository=eval_repo,
                 repo_root=tmp,
+                ragas_runner=lambda cases, traces: EvalStageResult(
+                    status=EvalStageStatus.SUCCEEDED,
+                    evaluator="openai_ragas_proxy_v1",
+                    sample_count=len(traces),
+                    metrics=[
+                        EvalMetricValue(metric=EvalMetricName.FAITHFULNESS, value=0.9),
+                        EvalMetricValue(metric=EvalMetricName.ANSWER_RELEVANCY, value=0.8),
+                        EvalMetricValue(metric=EvalMetricName.CONTEXT_PRECISION, value=0.7),
+                        EvalMetricValue(metric=EvalMetricName.CONTEXT_RECALL, value=0.6),
+                    ],
+                ),
                 judge_runner=lambda cases, traces: EvalStageResult(
                     status=EvalStageStatus.FAILED,
-                    evaluator="heuristic_judge_v1",
+                    evaluator="openai_judge_v1",
                     reason="judge_backend_error",
                     sample_count=len(traces),
                 ),
@@ -118,6 +129,115 @@ class EvaluationAndSFTTests(unittest.TestCase):
             self.assertEqual(result.judge.status.value, "failed")
             self.assertEqual(result.judge.reason, "judge_backend_error")
             self.assertTrue(any(metric.metric.value == "faithfulness" for metric in result.metrics))
+
+    def test_evaluation_real_profile_uses_external_evaluators(self) -> None:
+        with TemporaryDirectory() as tmp:
+            activate_test_profile("real")
+            trace_store, eval_repo = _build_eval_stack(tmp)
+            trace_store.write_trace(make_trace_record(trace_id="trace_ext"))
+            _write_golden_set(
+                tmp,
+                "external_suite",
+                [
+                    {
+                        "case_id": "case_ext",
+                        "query": "turtle escape",
+                        "domain": "BJJ",
+                        "trace_id": "trace_ext",
+                        "expected_behavior": {"required_mode": "FULL", "min_citation_count": 1},
+                        "expected_chunk_ids": ["chunk_1"],
+                    }
+                ],
+            )
+
+            from server.app.core import EvalRunRequest, build_runtime_config
+            from server.app.evaluation import EvaluationService, OpenAIExternalJudgeEvaluator, OpenAIExternalRagasEvaluator
+
+            runtime_config = build_runtime_config("real")
+            service = EvaluationService(
+                trace_store=trace_store,
+                golden_case_repository=eval_repo,
+                repo_root=tmp,
+                runtime_config=runtime_config,
+                ragas_evaluator=OpenAIExternalRagasEvaluator(
+                    runtime_config=runtime_config,
+                    api_key="test-key",
+                    transport=_StubEvalTransport(
+                        {
+                            "choices": [
+                                {
+                                    "message": {
+                                        "content": (
+                                            '{"faithfulness":0.91,"answer_relevancy":0.83,'
+                                            '"context_precision":0.79,"context_recall":0.88}'
+                                        )
+                                    }
+                                }
+                            ]
+                        }
+                    ),
+                ),
+                judge_evaluator=OpenAIExternalJudgeEvaluator(
+                    runtime_config=runtime_config,
+                    api_key="test-key",
+                    transport=_StubEvalTransport(
+                        {"choices": [{"message": {"content": '{"passed":true,"score":0.87,"notes":"good"}'}}]}
+                    ),
+                ),
+            )
+
+            result = service.run(EvalRunRequest(eval_set_id="external_suite"))
+
+            self.assertEqual(result.run_status.value, "completed")
+            self.assertEqual(result.ragas.status.value, "succeeded")
+            self.assertEqual(result.ragas.evaluator, "openai_ragas_proxy_v1")
+            self.assertEqual(result.judge.status.value, "succeeded")
+            self.assertEqual(result.judge.evaluator, "openai_judge_v1")
+            metrics = {metric.metric.value: metric.value for metric in result.metrics}
+            self.assertEqual(metrics["faithfulness"], 0.91)
+            self.assertEqual(metrics["answer_relevancy"], 0.83)
+            self.assertEqual(result.judge.details["score"], 0.87)
+
+    def test_evaluation_real_profile_provider_unavailable_marks_run_partial(self) -> None:
+        with TemporaryDirectory() as tmp:
+            activate_test_profile("real")
+            trace_store, eval_repo = _build_eval_stack(tmp)
+            trace_store.write_trace(make_trace_record(trace_id="trace_missing_key"))
+            _write_golden_set(
+                tmp,
+                "missing_key_suite",
+                [
+                    {
+                        "case_id": "case_missing_key",
+                        "query": "turtle escape",
+                        "domain": "BJJ",
+                        "trace_id": "trace_missing_key",
+                        "expected_behavior": {"required_mode": "FULL"},
+                        "expected_chunk_ids": ["chunk_1"],
+                    }
+                ],
+            )
+
+            from server.app.core import EvalRunRequest, build_runtime_config
+            from server.app.evaluation import EvaluationService, OpenAIExternalJudgeEvaluator, OpenAIExternalRagasEvaluator
+
+            runtime_config = build_runtime_config("real")
+            service = EvaluationService(
+                trace_store=trace_store,
+                golden_case_repository=eval_repo,
+                repo_root=tmp,
+                runtime_config=runtime_config,
+                ragas_evaluator=OpenAIExternalRagasEvaluator(runtime_config=runtime_config, api_key=None, transport=None),
+                judge_evaluator=OpenAIExternalJudgeEvaluator(runtime_config=runtime_config, api_key=None, transport=None),
+            )
+
+            result = service.run(EvalRunRequest(eval_set_id="missing_key_suite"))
+
+            self.assertEqual(result.run_status.value, "partial")
+            self.assertEqual(result.ragas.status.value, "failed")
+            self.assertEqual(result.ragas.reason, "missing_openai_api_key")
+            self.assertEqual(result.judge.status.value, "failed")
+            self.assertEqual(result.judge.reason, "missing_openai_api_key")
 
     def test_sft_export_filters_and_builds_train_rows(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -287,3 +407,13 @@ def _attach_input_snapshot(trace) -> None:
     )
     trace.generation_log.input_snapshot = input_snapshot
     trace.generation_log.prompt_snapshot = build_prompt_snapshot(input_snapshot)
+
+
+class _StubEvalTransport:
+    def __init__(self, response):
+        self.response = response
+        self.calls = []
+
+    def create_chat_completion(self, payload):
+        self.calls.append(payload)
+        return self.response

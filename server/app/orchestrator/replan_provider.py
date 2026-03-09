@@ -1,10 +1,7 @@
 from __future__ import annotations
 
 import json
-import os
-from dataclasses import dataclass
 from typing import Any, Protocol
-from urllib import error, request
 
 from pydantic import Field, ValidationError, root_validator
 
@@ -17,6 +14,14 @@ from server.app.core import (
     ProbeStats,
     RuntimeConfigSnapshot,
     TaskType,
+)
+from server.app.core.openai_chat import (
+    ChatCompletionTransport,
+    OpenAIChatCompletionTransport,
+    OpenAITransportError,
+    extract_chat_completion_text,
+    resolve_openai_api_key,
+    resolve_openai_base_url,
 )
 
 
@@ -68,45 +73,14 @@ class ReplanProvider(Protocol):
     def generate(self, provider_request: ReplanProviderRequest) -> LLMReplanOutput: ...
 
 
-class ChatCompletionTransport(Protocol):
-    def create_chat_completion(self, payload: dict[str, Any]) -> dict[str, Any]: ...
-
-
-@dataclass
-class OpenAIChatCompletionTransport:
-    api_key: str
-    base_url: str = "https://api.openai.com/v1"
-    timeout_seconds: int = 20
-
-    def create_chat_completion(self, payload: dict[str, Any]) -> dict[str, Any]:
-        endpoint = self.base_url.rstrip("/") + "/chat/completions"
-        http_request = request.Request(
-            endpoint,
-            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-            headers={
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
-            },
-            method="POST",
-        )
-        try:
-            with request.urlopen(http_request, timeout=self.timeout_seconds) as response:
-                return json.loads(response.read().decode("utf-8"))
-        except error.HTTPError as exc:
-            body = exc.read().decode("utf-8", errors="replace")
-            raise ReplanProviderError(f"openai_http_error:{exc.code}:{body}") from exc
-        except error.URLError as exc:
-            raise ReplanProviderError(f"openai_transport_error:{exc.reason}") from exc
-
-
 class OpenAIReplanProvider:
     def __init__(
         self,
         api_key: str | None = None,
         transport: ChatCompletionTransport | None = None,
     ):
-        resolved_key = api_key or os.getenv("OPENAI_API_KEY")
-        base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+        resolved_key = resolve_openai_api_key(api_key)
+        base_url = resolve_openai_base_url()
         self.api_key = resolved_key
         self.transport = transport or (
             OpenAIChatCompletionTransport(api_key=resolved_key, base_url=base_url)
@@ -118,8 +92,11 @@ class OpenAIReplanProvider:
         if not self.api_key or self.transport is None:
             raise ReplanProviderUnavailableError("missing_openai_api_key")
         payload = _build_openai_payload(provider_request)
-        response = self.transport.create_chat_completion(payload)
-        raw_content = _extract_content_text(response)
+        try:
+            response = self.transport.create_chat_completion(payload)
+            raw_content = extract_chat_completion_text(response)
+        except OpenAITransportError as exc:
+            raise ReplanProviderError(str(exc)) from exc
         try:
             parsed = json.loads(raw_content)
         except json.JSONDecodeError as exc:
@@ -180,29 +157,6 @@ def _prompt_payload(provider_request: ReplanProviderRequest) -> dict[str, Any]:
             "prompt_version": provider_request.runtime_config.prompt_versions.replan,
         },
     }
-
-
-def _extract_content_text(response: dict[str, Any]) -> str:
-    choices = response.get("choices", [])
-    if not choices:
-        raise ReplanProviderError("missing_choices")
-    message = choices[0].get("message", {})
-    content = message.get("content")
-    if isinstance(content, str) and content.strip():
-        return content
-    if isinstance(content, list):
-        fragments: list[str] = []
-        for item in content:
-            if isinstance(item, dict):
-                text = item.get("text")
-                if isinstance(text, str):
-                    fragments.append(text)
-        joined = "".join(fragments).strip()
-        if joined:
-            return joined
-    raise ReplanProviderError("missing_message_content")
-
-
 def _model_dump(model: Any) -> Any:
     if model is None:
         return None

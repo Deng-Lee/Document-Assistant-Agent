@@ -134,6 +134,7 @@ def create_app_state(root_dir: str | Path) -> AppState:
         trace_store=trace_store,
         golden_case_repository=golden_case_repository,
         repo_root=root,
+        runtime_config=runtime_config,
         replay_runner=lambda traces, variant, use_frozen_evidence: sft_service.replay_eval_traces(
             traces=traces,
             variant=variant,
