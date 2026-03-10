@@ -96,6 +96,25 @@ export const chatTurnFixture = {
   },
 };
 
+export const chatStreamFixture = [
+  {
+    event_type: "started",
+    conversation_id: "conv_fixture_001",
+    message: "chat turn accepted",
+  },
+  {
+    event_type: "progress",
+    conversation_id: "conv_fixture_001",
+    stage: "orchestrator",
+    message: "next_action=CLARIFY",
+  },
+  {
+    event_type: "completed",
+    conversation_id: "conv_fixture_001",
+    payload: chatTurnFixture,
+  },
+];
+
 export const evalRunsFixture = [
   {
     eval_run_id: "eval_existing_001",

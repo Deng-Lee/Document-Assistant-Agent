@@ -47,3 +47,36 @@ class ChatFinalTurnResponse(PDABaseModel):
 
 
 ChatTurnResponseType = ChatClarifyTurnResponse | ChatFinalTurnResponse
+
+
+class ChatStreamStartedEvent(PDABaseModel):
+    event_type: Literal["started"] = "started"
+    conversation_id: str
+    message: str
+
+
+class ChatStreamProgressEvent(PDABaseModel):
+    event_type: Literal["progress"] = "progress"
+    conversation_id: str
+    stage: Literal["orchestrator", "retrieval", "generation"]
+    message: str
+
+
+class ChatStreamCompletedEvent(PDABaseModel):
+    event_type: Literal["completed"] = "completed"
+    conversation_id: str
+    payload: ChatTurnResponseType
+
+
+class ChatStreamFailedEvent(PDABaseModel):
+    event_type: Literal["failed"] = "failed"
+    conversation_id: str | None = None
+    detail: str
+
+
+ChatStreamEvent = (
+    ChatStreamStartedEvent
+    | ChatStreamProgressEvent
+    | ChatStreamCompletedEvent
+    | ChatStreamFailedEvent
+)

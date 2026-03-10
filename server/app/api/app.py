@@ -1,16 +1,23 @@
 from __future__ import annotations
 
 from datetime import datetime
+import json
 from pathlib import Path
+from queue import SimpleQueue
+from threading import Thread
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 
 from server.app.agents.bjj_coach.types import BJJCoachInput
 from server.app.core import (
     ChatClarifyTurnResponse,
     ChatFinalTurnResponse,
+    ChatStreamCompletedEvent,
+    ChatStreamFailedEvent,
+    ChatStreamProgressEvent,
+    ChatStreamStartedEvent,
     ClarifyRequest,
     ClarifySlot,
     ClarifyWho,
@@ -178,227 +185,35 @@ def create_app(root_dir: str | Path | None = None) -> FastAPI:
 
     @app.post("/api/chat/turn")
     def chat_turn(request: ChatTurnRequest):
+        return _run_chat_turn(_state(app), request)
+
+    @app.post("/api/chat/stream")
+    def chat_stream(request: ChatTurnRequest) -> StreamingResponse:
         state = _state(app)
-        conversation = state.get_or_create_conversation(request.conversation_id)
-        recorder = TraceRecorder(
-            runtime_config_snapshot=state.runtime_config,
-            conversation_id=conversation.conversation_id,
-        )
-        with recorder.span("chat.turn_total", entrypoint="chat"):
-            orchestrator_outcome = state.orchestrator_service.route(
-                user_message=request.user_message,
-                session_state=conversation.state,
-                entrypoint=EntryPoint.CHAT,
-            )
-            conversation.state = _model_copy(orchestrator_outcome.session_state)
-            request_log = RequestLog(
-                entrypoint="chat",
-                domain=orchestrator_outcome.execution_plan.domain.value,
-                task=orchestrator_outcome.execution_plan.task.value,
-                profile_version_id=state.current_profile.profile_version_id,
-                confirmed_slots=conversation.state.slots,
-                plan_check=orchestrator_outcome.plan_check,
-                execution_plan=orchestrator_outcome.execution_plan,
-            )
-            recorder.set_request_log(request_log)
-            if orchestrator_outcome.probe_stats is not None:
-                recorder.set_retrieval_log(RetrievalLog(probe_stats=orchestrator_outcome.probe_stats))
-            if orchestrator_outcome.plan_check is not None and (
-                orchestrator_outcome.plan_check.need_replan or orchestrator_outcome.llm_replan_invoked
-            ):
-                recorder.add_event(
-                    "orchestrator.replan_llm",
-                    invoked=orchestrator_outcome.llm_replan_invoked,
-                    result=orchestrator_outcome.llm_replan_result,
-                    reason_codes=orchestrator_outcome.plan_check.reason_codes,
-                )
 
-            if orchestrator_outcome.execution_plan.next_action.value == "WRITE_FLOW":
-                clarify = ClarifyRequest(
-                    who=ClarifyWho.ORCHESTRATOR,
-                    slot=ClarifySlot.DOMAIN,
-                    options=["训练", "写作/阅读"],
-                    template_id="REDIRECT_RECORD_V1",
-                    round=conversation.state.clarify_round,
-                    why="检测到写入意图，建议改走 record 入口。",
-                )
-                clarify_input = _build_generation_input_snapshot(
-                    task=orchestrator_outcome.execution_plan.task.value,
-                    query_original=request.user_message,
-                    query_clean=request.user_message.strip(),
-                    confirmed_slots=conversation.state.slots,
-                    coach_clarify_round=conversation.state.coach_clarify_round,
-                    coach_pending_slot=conversation.state.coach_pending_slot,
-                    profile_summary=state.current_profile,
-                )
-                recorder.set_generation_log(
-                    GenerationLog(
-                        provider=state.runtime_config.model_routing.provider,
-                        model=state.runtime_config.model_routing.base_model,
-                        prompt_version=state.runtime_config.prompt_versions.replan,
-                        prompt_snapshot=build_trace_prompt_snapshot(clarify_input),
-                        input_snapshot=clarify_input,
-                        output=_dump(clarify),
-                    )
-                )
-                recorder.persist(state.trace_store)
-                trace_id = recorder.trace_id
-                response = ChatClarifyTurnResponse(
-                    trace_id=trace_id,
-                    conversation_id=conversation.conversation_id,
-                    response=clarify,
-                )
-                conversation.turns.append({"user": request.user_message, "assistant": _dump(response.response)})
-                return _dump(response)
+        def event_stream():
+            queue: SimpleQueue[dict | object] = SimpleQueue()
+            sentinel = object()
 
-            if orchestrator_outcome.execution_plan.next_action.value == "CLARIFY":
-                clarify = ClarifyRequest(
-                    who=ClarifyWho.ORCHESTRATOR,
-                    slot=orchestrator_outcome.execution_plan.clarify.slot,
-                    options=orchestrator_outcome.execution_plan.clarify.options,
-                    template_id=orchestrator_outcome.execution_plan.clarify.question_template_id,
-                    round=conversation.state.clarify_round,
-                    why="; ".join(orchestrator_outcome.execution_plan.explain.reason_codes) or "需要补充槽位。",
-                )
-                recorder.add_event(
-                    "clarify.requested",
-                    who=clarify.who.value,
-                    slot=clarify.slot.value,
-                    round=clarify.round,
-                )
-                clarify_input = _build_generation_input_snapshot(
-                    task=orchestrator_outcome.execution_plan.task.value,
-                    query_original=request.user_message,
-                    query_clean=request.user_message.strip(),
-                    confirmed_slots=conversation.state.slots,
-                    coach_clarify_round=conversation.state.coach_clarify_round,
-                    coach_pending_slot=conversation.state.coach_pending_slot,
-                    profile_summary=state.current_profile,
-                )
-                recorder.set_generation_log(
-                    GenerationLog(
-                        provider=state.runtime_config.model_routing.provider,
-                        model=state.runtime_config.model_routing.base_model,
-                        prompt_version=state.runtime_config.prompt_versions.replan,
-                        prompt_snapshot=build_trace_prompt_snapshot(clarify_input),
-                        input_snapshot=clarify_input,
-                        output=_dump(clarify),
-                    )
-                )
-                recorder.persist(state.trace_store)
-                trace_id = recorder.trace_id
-                response = ChatClarifyTurnResponse(
-                    trace_id=trace_id,
-                    conversation_id=conversation.conversation_id,
-                    response=clarify,
-                )
-                conversation.turns.append({"user": request.user_message, "assistant": _dump(response.response)})
-                return _dump(response)
+            def emit(event) -> None:
+                queue.put(_dump(event))
 
-            retrieval_outcome = state.retrieval_service.retrieve(
-                query_text=orchestrator_outcome.execution_plan.retrieval_plan.query_text,
-                filters_hint=orchestrator_outcome.execution_plan.retrieval_plan.filters,
-                mode="full",
-                top_k=orchestrator_outcome.execution_plan.retrieval_plan.top_k,
-            )
-            recorder.set_retrieval_log(retrieval_outcome.retrieval_log)
-            recorder.set_evidence_log(retrieval_outcome)
+            def worker() -> None:
+                try:
+                    _run_chat_turn(state, request, emit_event=emit)
+                except Exception as exc:
+                    emit(ChatStreamFailedEvent(detail=str(exc)))
+                finally:
+                    queue.put(sentinel)
 
-            final_payload = None
-            validator_report = None
-            input_snapshot = _build_generation_input_snapshot(
-                task=orchestrator_outcome.execution_plan.task.value,
-                query_original=request.user_message,
-                query_clean=request.user_message.strip(),
-                confirmed_slots=conversation.state.slots,
-                coach_clarify_round=conversation.state.coach_clarify_round,
-                coach_pending_slot=conversation.state.coach_pending_slot,
-                profile_summary=state.current_profile,
-                frozen_evidence_pack=retrieval_outcome,
-            )
-            if orchestrator_outcome.execution_plan.task.value == "COACH_BJJ":
-                coach_outcome = state.bjj_coach_service.run(
-                    BJJCoachInput(
-                        query_original=input_snapshot.query_original,
-                        query_clean=input_snapshot.query_clean,
-                        confirmed_slots=input_snapshot.confirmed_slots,
-                        coach_clarify_round=input_snapshot.coach_clarify_round,
-                        coach_pending_slot=input_snapshot.coach_pending_slot,
-                        profile_summary=input_snapshot.profile_summary_snapshot or state.current_profile,
-                    ),
-                    evidence_pack=retrieval_outcome,
-                )
-                if coach_outcome.clarify_request is not None:
-                    conversation.state.coach_pending_slot = coach_outcome.clarify_request.slot.value
-                    conversation.state.coach_clarify_round = coach_outcome.clarify_request.round
-                    clarify_input = _build_generation_input_snapshot(
-                        task=orchestrator_outcome.execution_plan.task.value,
-                        query_original=request.user_message,
-                        query_clean=request.user_message.strip(),
-                        confirmed_slots=conversation.state.slots,
-                        coach_clarify_round=conversation.state.coach_clarify_round,
-                        coach_pending_slot=conversation.state.coach_pending_slot,
-                        profile_summary=state.current_profile,
-                        frozen_evidence_pack=retrieval_outcome,
-                    )
-                    recorder.add_event(
-                        "clarify.requested",
-                        who=coach_outcome.clarify_request.who.value,
-                        slot=coach_outcome.clarify_request.slot.value,
-                        round=coach_outcome.clarify_request.round,
-                    )
-                    recorder.set_generation_log(
-                        GenerationLog(
-                            provider=state.runtime_config.model_routing.provider,
-                            model=state.runtime_config.model_routing.base_model,
-                            prompt_version=state.runtime_config.prompt_versions.bjj_coach,
-                            prompt_snapshot=build_trace_prompt_snapshot(clarify_input),
-                            input_snapshot=clarify_input,
-                            output=_dump(coach_outcome.clarify_request),
-                        )
-                    )
-                    recorder.persist(state.trace_store)
-                    trace_id = recorder.trace_id
-                    response = ChatClarifyTurnResponse(
-                        trace_id=trace_id,
-                        conversation_id=conversation.conversation_id,
-                        response=coach_outcome.clarify_request,
-                    )
-                    conversation.turns.append({"user": request.user_message, "assistant": _dump(response.response)})
-                    return _dump(response)
-                final_payload = coach_outcome.final_answer
-                validator_report = coach_outcome.validator_report
-            else:
-                literary_outcome = state.literary_service.run(request.user_message, retrieval_outcome)
-                final_payload = literary_outcome
+            Thread(target=worker, daemon=True).start()
+            while True:
+                item = queue.get()
+                if item is sentinel:
+                    break
+                yield _encode_sse(item)
 
-            recorder.set_generation_log(
-                GenerationLog(
-                    provider=state.runtime_config.model_routing.provider,
-                    model=state.runtime_config.model_routing.base_model,
-                    prompt_version=(
-                        state.runtime_config.prompt_versions.bjj_coach
-                        if orchestrator_outcome.execution_plan.task.value == "COACH_BJJ"
-                        else state.runtime_config.prompt_versions.literary
-                    ),
-                    prompt_snapshot=build_trace_prompt_snapshot(input_snapshot),
-                    input_snapshot=input_snapshot,
-                    output=_dump(final_payload),
-                    validator_report=validator_report,
-                )
-            )
-            recorder.persist(state.trace_store)
-            trace_id = recorder.trace_id
-            response = ChatFinalTurnResponse(
-                trace_id=trace_id,
-                conversation_id=conversation.conversation_id,
-                response=final_payload,
-            )
-            conversation.turns.append({"user": request.user_message, "assistant": _dump(response.response)})
-            conversation.state.pending_slot = None
-            conversation.state.coach_pending_slot = None
-            conversation.state.coach_clarify_round = 0
-            return _dump(response)
+        return StreamingResponse(event_stream(), media_type="text/event-stream")
 
     @app.get("/api/chat/{conversation_id}", response_model=ChatConversationResponse)
     def get_conversation(conversation_id: str) -> ChatConversationResponse:
@@ -546,6 +361,287 @@ def create_app(root_dir: str | Path | None = None) -> FastAPI:
     return app
 
 
+def _run_chat_turn(state: AppState, request: ChatTurnRequest, emit_event=None):
+    conversation = state.get_or_create_conversation(request.conversation_id)
+    recorder = TraceRecorder(
+        runtime_config_snapshot=state.runtime_config,
+        conversation_id=conversation.conversation_id,
+    )
+    _emit_chat_event(
+        emit_event,
+        ChatStreamStartedEvent(
+            conversation_id=conversation.conversation_id,
+            message="chat turn accepted",
+        ),
+    )
+    with recorder.span("chat.turn_total", entrypoint="chat"):
+        orchestrator_outcome = state.orchestrator_service.route(
+            user_message=request.user_message,
+            session_state=conversation.state,
+            entrypoint=EntryPoint.CHAT,
+        )
+        conversation.state = _model_copy(orchestrator_outcome.session_state)
+        request_log = RequestLog(
+            entrypoint="chat",
+            domain=orchestrator_outcome.execution_plan.domain.value,
+            task=orchestrator_outcome.execution_plan.task.value,
+            profile_version_id=state.current_profile.profile_version_id,
+            confirmed_slots=conversation.state.slots,
+            plan_check=orchestrator_outcome.plan_check,
+            execution_plan=orchestrator_outcome.execution_plan,
+        )
+        recorder.set_request_log(request_log)
+        if orchestrator_outcome.probe_stats is not None:
+            recorder.set_retrieval_log(RetrievalLog(probe_stats=orchestrator_outcome.probe_stats))
+        if orchestrator_outcome.plan_check is not None and (
+            orchestrator_outcome.plan_check.need_replan or orchestrator_outcome.llm_replan_invoked
+        ):
+            recorder.add_event(
+                "orchestrator.replan_llm",
+                invoked=orchestrator_outcome.llm_replan_invoked,
+                result=orchestrator_outcome.llm_replan_result,
+                reason_codes=orchestrator_outcome.plan_check.reason_codes,
+            )
+        _emit_chat_event(
+            emit_event,
+            ChatStreamProgressEvent(
+                conversation_id=conversation.conversation_id,
+                stage="orchestrator",
+                message=f"next_action={orchestrator_outcome.execution_plan.next_action.value}",
+            ),
+        )
+
+        if orchestrator_outcome.execution_plan.next_action.value == "WRITE_FLOW":
+            clarify = ClarifyRequest(
+                who=ClarifyWho.ORCHESTRATOR,
+                slot=ClarifySlot.DOMAIN,
+                options=["训练", "写作/阅读"],
+                template_id="REDIRECT_RECORD_V1",
+                round=conversation.state.clarify_round,
+                why="检测到写入意图，建议改走 record 入口。",
+            )
+            clarify_input = _build_generation_input_snapshot(
+                task=orchestrator_outcome.execution_plan.task.value,
+                query_original=request.user_message,
+                query_clean=request.user_message.strip(),
+                confirmed_slots=conversation.state.slots,
+                coach_clarify_round=conversation.state.coach_clarify_round,
+                coach_pending_slot=conversation.state.coach_pending_slot,
+                profile_summary=state.current_profile,
+            )
+            recorder.set_generation_log(
+                GenerationLog(
+                    provider=state.runtime_config.model_routing.provider,
+                    model=state.runtime_config.model_routing.base_model,
+                    prompt_version=state.runtime_config.prompt_versions.replan,
+                    prompt_snapshot=build_trace_prompt_snapshot(clarify_input),
+                    input_snapshot=clarify_input,
+                    output=_dump(clarify),
+                )
+            )
+            recorder.persist(state.trace_store)
+            response = ChatClarifyTurnResponse(
+                trace_id=recorder.trace_id,
+                conversation_id=conversation.conversation_id,
+                response=clarify,
+            )
+            conversation.turns.append({"user": request.user_message, "assistant": _dump(response.response)})
+            payload = _dump(response)
+            _emit_chat_event(
+                emit_event,
+                ChatStreamCompletedEvent(
+                    conversation_id=conversation.conversation_id,
+                    payload=response,
+                ),
+            )
+            return payload
+
+        if orchestrator_outcome.execution_plan.next_action.value == "CLARIFY":
+            clarify = ClarifyRequest(
+                who=ClarifyWho.ORCHESTRATOR,
+                slot=orchestrator_outcome.execution_plan.clarify.slot,
+                options=orchestrator_outcome.execution_plan.clarify.options,
+                template_id=orchestrator_outcome.execution_plan.clarify.question_template_id,
+                round=conversation.state.clarify_round,
+                why="; ".join(orchestrator_outcome.execution_plan.explain.reason_codes) or "需要补充槽位。",
+            )
+            recorder.add_event(
+                "clarify.requested",
+                who=clarify.who.value,
+                slot=clarify.slot.value,
+                round=clarify.round,
+            )
+            clarify_input = _build_generation_input_snapshot(
+                task=orchestrator_outcome.execution_plan.task.value,
+                query_original=request.user_message,
+                query_clean=request.user_message.strip(),
+                confirmed_slots=conversation.state.slots,
+                coach_clarify_round=conversation.state.coach_clarify_round,
+                coach_pending_slot=conversation.state.coach_pending_slot,
+                profile_summary=state.current_profile,
+            )
+            recorder.set_generation_log(
+                GenerationLog(
+                    provider=state.runtime_config.model_routing.provider,
+                    model=state.runtime_config.model_routing.base_model,
+                    prompt_version=state.runtime_config.prompt_versions.replan,
+                    prompt_snapshot=build_trace_prompt_snapshot(clarify_input),
+                    input_snapshot=clarify_input,
+                    output=_dump(clarify),
+                )
+            )
+            recorder.persist(state.trace_store)
+            response = ChatClarifyTurnResponse(
+                trace_id=recorder.trace_id,
+                conversation_id=conversation.conversation_id,
+                response=clarify,
+            )
+            conversation.turns.append({"user": request.user_message, "assistant": _dump(response.response)})
+            payload = _dump(response)
+            _emit_chat_event(
+                emit_event,
+                ChatStreamCompletedEvent(
+                    conversation_id=conversation.conversation_id,
+                    payload=response,
+                ),
+            )
+            return payload
+
+        retrieval_outcome = state.retrieval_service.retrieve(
+            query_text=orchestrator_outcome.execution_plan.retrieval_plan.query_text,
+            filters_hint=orchestrator_outcome.execution_plan.retrieval_plan.filters,
+            mode="full",
+            top_k=orchestrator_outcome.execution_plan.retrieval_plan.top_k,
+        )
+        recorder.set_retrieval_log(retrieval_outcome.retrieval_log)
+        recorder.set_evidence_log(retrieval_outcome)
+        _emit_chat_event(
+            emit_event,
+            ChatStreamProgressEvent(
+                conversation_id=conversation.conversation_id,
+                stage="retrieval",
+                message=f"evidence_items={len(retrieval_outcome.items)}",
+            ),
+        )
+
+        final_payload = None
+        validator_report = None
+        input_snapshot = _build_generation_input_snapshot(
+            task=orchestrator_outcome.execution_plan.task.value,
+            query_original=request.user_message,
+            query_clean=request.user_message.strip(),
+            confirmed_slots=conversation.state.slots,
+            coach_clarify_round=conversation.state.coach_clarify_round,
+            coach_pending_slot=conversation.state.coach_pending_slot,
+            profile_summary=state.current_profile,
+            frozen_evidence_pack=retrieval_outcome,
+        )
+        if orchestrator_outcome.execution_plan.task.value == "COACH_BJJ":
+            coach_outcome = state.bjj_coach_service.run(
+                BJJCoachInput(
+                    query_original=input_snapshot.query_original,
+                    query_clean=input_snapshot.query_clean,
+                    confirmed_slots=input_snapshot.confirmed_slots,
+                    coach_clarify_round=input_snapshot.coach_clarify_round,
+                    coach_pending_slot=input_snapshot.coach_pending_slot,
+                    profile_summary=input_snapshot.profile_summary_snapshot or state.current_profile,
+                ),
+                evidence_pack=retrieval_outcome,
+            )
+            if coach_outcome.clarify_request is not None:
+                conversation.state.coach_pending_slot = coach_outcome.clarify_request.slot.value
+                conversation.state.coach_clarify_round = coach_outcome.clarify_request.round
+                clarify_input = _build_generation_input_snapshot(
+                    task=orchestrator_outcome.execution_plan.task.value,
+                    query_original=request.user_message,
+                    query_clean=request.user_message.strip(),
+                    confirmed_slots=conversation.state.slots,
+                    coach_clarify_round=conversation.state.coach_clarify_round,
+                    coach_pending_slot=conversation.state.coach_pending_slot,
+                    profile_summary=state.current_profile,
+                    frozen_evidence_pack=retrieval_outcome,
+                )
+                recorder.add_event(
+                    "clarify.requested",
+                    who=coach_outcome.clarify_request.who.value,
+                    slot=coach_outcome.clarify_request.slot.value,
+                    round=coach_outcome.clarify_request.round,
+                )
+                recorder.set_generation_log(
+                    GenerationLog(
+                        provider=state.runtime_config.model_routing.provider,
+                        model=state.runtime_config.model_routing.base_model,
+                        prompt_version=state.runtime_config.prompt_versions.bjj_coach,
+                        prompt_snapshot=build_trace_prompt_snapshot(clarify_input),
+                        input_snapshot=clarify_input,
+                        output=_dump(coach_outcome.clarify_request),
+                    )
+                )
+                recorder.persist(state.trace_store)
+                response = ChatClarifyTurnResponse(
+                    trace_id=recorder.trace_id,
+                    conversation_id=conversation.conversation_id,
+                    response=coach_outcome.clarify_request,
+                )
+                conversation.turns.append({"user": request.user_message, "assistant": _dump(response.response)})
+                payload = _dump(response)
+                _emit_chat_event(
+                    emit_event,
+                    ChatStreamCompletedEvent(
+                        conversation_id=conversation.conversation_id,
+                        payload=response,
+                    ),
+                )
+                return payload
+            final_payload = coach_outcome.final_answer
+            validator_report = coach_outcome.validator_report
+        else:
+            final_payload = state.literary_service.run(request.user_message, retrieval_outcome)
+        _emit_chat_event(
+            emit_event,
+            ChatStreamProgressEvent(
+                conversation_id=conversation.conversation_id,
+                stage="generation",
+                message=f"task={orchestrator_outcome.execution_plan.task.value}",
+            ),
+        )
+
+        recorder.set_generation_log(
+            GenerationLog(
+                provider=state.runtime_config.model_routing.provider,
+                model=state.runtime_config.model_routing.base_model,
+                prompt_version=(
+                    state.runtime_config.prompt_versions.bjj_coach
+                    if orchestrator_outcome.execution_plan.task.value == "COACH_BJJ"
+                    else state.runtime_config.prompt_versions.literary
+                ),
+                prompt_snapshot=build_trace_prompt_snapshot(input_snapshot),
+                input_snapshot=input_snapshot,
+                output=_dump(final_payload),
+                validator_report=validator_report,
+            )
+        )
+        recorder.persist(state.trace_store)
+        response = ChatFinalTurnResponse(
+            trace_id=recorder.trace_id,
+            conversation_id=conversation.conversation_id,
+            response=final_payload,
+        )
+        conversation.turns.append({"user": request.user_message, "assistant": _dump(response.response)})
+        conversation.state.pending_slot = None
+        conversation.state.coach_pending_slot = None
+        conversation.state.coach_clarify_round = 0
+        payload = _dump(response)
+        _emit_chat_event(
+            emit_event,
+            ChatStreamCompletedEvent(
+                conversation_id=conversation.conversation_id,
+                payload=response,
+            ),
+        )
+        return payload
+
+
 def _state(app: FastAPI) -> AppState:
     return app.state.pda
 
@@ -564,6 +660,18 @@ def _model_copy(model):
     if hasattr(model, "model_copy"):
         return model.model_copy(deep=True)
     return model.copy(deep=True)
+
+
+def _emit_chat_event(emit_event, event) -> None:
+    if emit_event is None:
+        return
+    emit_event(event)
+
+
+def _encode_sse(payload: dict) -> str:
+    event_name = payload.get("event_type", "message")
+    body = json.dumps(payload, ensure_ascii=False)
+    return f"event: {event_name}\ndata: {body}\n\n"
 
 
 def _store_jobs(state: AppState, jobs) -> list:

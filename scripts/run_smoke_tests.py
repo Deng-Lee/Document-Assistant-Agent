@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import asyncio
 import argparse
 import json
 import os
@@ -40,6 +41,7 @@ def main() -> None:
         repo_root / "web" / "components" / "traces-client.jsx",
         repo_root / "web" / "components" / "evaluation-client.jsx",
         repo_root / "web" / "lib" / "api.js",
+        repo_root / "web" / "lib" / "chat-stream.js",
     ]
     package_payload = json.loads(frontend_package.read_text(encoding="utf-8"))
     assert package_payload["dependencies"]["next"]
@@ -517,6 +519,13 @@ def main() -> None:
         api_chat = _to_dict(api_routes["/api/chat/turn"](ChatTurnRequest(user_message="迷宫和镜子有什么联系？")))
         assert api_chat["response_type"] == "final_answer"
         assert api_chat["conversation_id"]
+        stream_response = api_routes["/api/chat/stream"](
+            ChatTurnRequest(user_message="我在下位 turtle 被对手抓袖子，想 escape，应该怎么做？")
+        )
+        assert stream_response.media_type == "text/event-stream"
+        stream_body = asyncio.run(_collect_streaming_body(stream_response))
+        assert '"event_type": "started"' in stream_body or '"event_type":"started"' in stream_body
+        assert '"event_type": "completed"' in stream_body or '"event_type":"completed"' in stream_body
 
         api_jobs = _to_dict(api_routes["/api/jobs"]())
         assert api_jobs["jobs"]
@@ -839,6 +848,16 @@ class _SmokeRetrievalService:
 
     def retrieve(self, query_text, filters_hint=None, mode="probe", top_k=None):
         return _SmokeRetrievalOutcome(self._probe_stats)
+
+
+async def _collect_streaming_body(response) -> str:
+    chunks: list[str] = []
+    async for chunk in response.body_iterator:
+        if isinstance(chunk, bytes):
+            chunks.append(chunk.decode("utf-8"))
+        else:
+            chunks.append(chunk)
+    return "".join(chunks)
 
 
 if __name__ == "__main__":

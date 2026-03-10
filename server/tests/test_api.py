@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import unittest
@@ -109,6 +110,32 @@ class APITests(unittest.TestCase):
             updated = dump_result(routes["/api/chat/{conversation_id}"](conversation_id))
             self.assertEqual(updated["last_state"]["slots"][asked_slot], "下位")
             self.assertEqual(len(updated["turns"]), 2)
+
+    def test_chat_stream_endpoint_emits_sse_progress_and_completed_payload(self) -> None:
+        with TemporaryDirectory() as tmp:
+            app = create_test_app(tmp)
+            routes = endpoint_map(app)
+
+            from server.app.api.models import ChatTurnRequest, IngestTextRequest
+
+            routes["/api/ingest/text"](
+                IngestTextRequest(markdown_text=sample_bjj_markdown(), source_path_hint="bjj.md")
+            )
+
+            stream_response = routes["/api/chat/stream"](
+                ChatTurnRequest(user_message="我在下位 turtle 被对手抓袖子，想 escape，应该怎么做？")
+            )
+            self.assertEqual(stream_response.media_type, "text/event-stream")
+            body = asyncio.run(collect_streaming_body(stream_response))
+
+            events = parse_sse_events(body)
+            self.assertGreaterEqual(len(events), 3)
+            self.assertEqual(events[0]["event_type"], "started")
+            self.assertEqual(events[1]["event_type"], "progress")
+            self.assertEqual(events[1]["stage"], "orchestrator")
+            self.assertEqual(events[-1]["event_type"], "completed")
+            self.assertEqual(events[-1]["payload"]["conversation_id"], events[0]["conversation_id"])
+            self.assertIn(events[-1]["payload"]["response_type"], {"clarify_request", "final_answer"})
 
     def test_write_intent_redirects_to_record_flow(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -538,3 +565,33 @@ class _StubInferenceBackend:
                 os.environ.pop("PDA_MODEL_PROFILE_CONFIG_DIR", None)
             else:
                 os.environ["PDA_MODEL_PROFILE_CONFIG_DIR"] = original
+
+
+def parse_sse_events(body: str) -> list[dict]:
+    events: list[dict] = []
+    for chunk in body.strip().split("\n\n"):
+        if not chunk.strip():
+            continue
+        data_lines = [
+            line.split(":", 1)[1].strip()
+            for line in chunk.splitlines()
+            if line.startswith("data:")
+        ]
+        if not data_lines:
+            continue
+        events.append(json.loads("\n".join(data_lines)))
+    return events
+
+
+async def collect_streaming_body(response) -> str:
+    chunks: list[str] = []
+    async for chunk in response.body_iterator:
+        if isinstance(chunk, bytes):
+            chunks.append(chunk.decode("utf-8"))
+        else:
+            chunks.append(chunk)
+    return "".join(chunks)
+
+
+if __name__ == "__main__":
+    unittest.main()

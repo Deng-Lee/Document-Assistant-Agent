@@ -2154,6 +2154,943 @@ export const apiContracts = {
     "title": "ChatFinalTurnResponse",
     "type": "object"
   },
+  "chat_stream_completed_event": {
+    "additionalProperties": false,
+    "definitions": {
+      "BJJAmbiguousFinalAnswer": {
+        "additionalProperties": false,
+        "description": "Shared model base so all contracts behave consistently.",
+        "properties": {
+          "assumptions": {
+            "$ref": "#/definitions/BJJAssumptions"
+          },
+          "caveats": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Caveats",
+            "type": "array"
+          },
+          "citations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Citations",
+            "type": "array"
+          },
+          "drills": {
+            "items": {
+              "$ref": "#/definitions/BJJDrill"
+            },
+            "title": "Drills",
+            "type": "array"
+          },
+          "mistakes": {
+            "items": {
+              "$ref": "#/definitions/BJJMistake"
+            },
+            "title": "Mistakes",
+            "type": "array"
+          },
+          "mode": {
+            "default": "AMBIGUOUS_FINAL",
+            "enum": [
+              "AMBIGUOUS_FINAL"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "next_step": {
+            "$ref": "#/definitions/BJJNextStep"
+          },
+          "observations": {
+            "items": {
+              "$ref": "#/definitions/BJJObservation"
+            },
+            "title": "Observations",
+            "type": "array"
+          },
+          "plans": {
+            "$ref": "#/definitions/BJJPlanCollection"
+          },
+          "reasoning_status": {
+            "$ref": "#/definitions/BJJReasoningStatus"
+          }
+        },
+        "required": [
+          "reasoning_status"
+        ],
+        "title": "BJJAmbiguousFinalAnswer",
+        "type": "object"
+      },
+      "BJJAssumptions": {
+        "additionalProperties": false,
+        "description": "Shared model base so all contracts behave consistently.",
+        "properties": {
+          "confirmed_slots": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Confirmed Slots",
+            "type": "object"
+          },
+          "opponent_control": {
+            "default": "不确定",
+            "title": "Opponent Control",
+            "type": "string"
+          },
+          "ruleset": {
+            "default": "Gi",
+            "title": "Ruleset",
+            "type": "string"
+          }
+        },
+        "title": "BJJAssumptions",
+        "type": "object"
+      },
+      "BJJBranchPlan": {
+        "additionalProperties": false,
+        "description": "Shared model base so all contracts behave consistently.",
+        "properties": {
+          "branches": {
+            "items": {
+              "$ref": "#/definitions/BJJPlanBranch"
+            },
+            "title": "Branches",
+            "type": "array"
+          }
+        },
+        "title": "BJJBranchPlan",
+        "type": "object"
+      },
+      "BJJDrill": {
+        "additionalProperties": false,
+        "description": "Shared model base so all contracts behave consistently.",
+        "properties": {
+          "constraints": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Constraints",
+            "type": "array"
+          },
+          "dosage": {
+            "default": "",
+            "title": "Dosage",
+            "type": "string"
+          },
+          "evidence_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidence Ids",
+            "type": "array"
+          },
+          "generic": {
+            "default": false,
+            "title": "Generic",
+            "type": "boolean"
+          },
+          "goal": {
+            "default": "",
+            "title": "Goal",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "opponent_control": {
+            "default": "不确定",
+            "title": "Opponent Control",
+            "type": "string"
+          },
+          "start": {
+            "$ref": "#/definitions/DrillStart"
+          },
+          "success_criteria": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Success Criteria",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "start"
+        ],
+        "title": "BJJDrill",
+        "type": "object"
+      },
+      "BJJFullAnswer": {
+        "additionalProperties": false,
+        "description": "Shared model base so all contracts behave consistently.",
+        "properties": {
+          "assumptions": {
+            "$ref": "#/definitions/BJJAssumptions"
+          },
+          "caveats": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Caveats",
+            "type": "array"
+          },
+          "citations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Citations",
+            "type": "array"
+          },
+          "drills": {
+            "items": {
+              "$ref": "#/definitions/BJJDrill"
+            },
+            "title": "Drills",
+            "type": "array"
+          },
+          "mistakes": {
+            "items": {
+              "$ref": "#/definitions/BJJMistake"
+            },
+            "title": "Mistakes",
+            "type": "array"
+          },
+          "mode": {
+            "default": "FULL",
+            "enum": [
+              "FULL"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "next_step": {
+            "$ref": "#/definitions/BJJNextStep"
+          },
+          "observations": {
+            "items": {
+              "$ref": "#/definitions/BJJObservation"
+            },
+            "title": "Observations",
+            "type": "array"
+          },
+          "plans": {
+            "$ref": "#/definitions/BJJPlanCollection"
+          },
+          "reasoning_status": {
+            "$ref": "#/definitions/BJJReasoningStatus"
+          }
+        },
+        "required": [
+          "reasoning_status"
+        ],
+        "title": "BJJFullAnswer",
+        "type": "object"
+      },
+      "BJJLowEvidenceAnswer": {
+        "additionalProperties": false,
+        "description": "Shared model base so all contracts behave consistently.",
+        "properties": {
+          "assumptions": {
+            "$ref": "#/definitions/BJJAssumptions"
+          },
+          "caveats": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Caveats",
+            "type": "array"
+          },
+          "citations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Citations",
+            "type": "array"
+          },
+          "drills": {
+            "items": {
+              "$ref": "#/definitions/BJJDrill"
+            },
+            "title": "Drills",
+            "type": "array"
+          },
+          "mistakes": {
+            "items": {
+              "$ref": "#/definitions/BJJMistake"
+            },
+            "title": "Mistakes",
+            "type": "array"
+          },
+          "mode": {
+            "default": "LOW_EVIDENCE",
+            "enum": [
+              "LOW_EVIDENCE"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "next_step": {
+            "$ref": "#/definitions/BJJNextStep"
+          },
+          "observations": {
+            "items": {
+              "$ref": "#/definitions/BJJObservation"
+            },
+            "title": "Observations",
+            "type": "array"
+          },
+          "plans": {
+            "$ref": "#/definitions/BJJPlanCollection"
+          },
+          "reasoning_status": {
+            "$ref": "#/definitions/BJJReasoningStatus"
+          }
+        },
+        "required": [
+          "reasoning_status"
+        ],
+        "title": "BJJLowEvidenceAnswer",
+        "type": "object"
+      },
+      "BJJMistake": {
+        "additionalProperties": false,
+        "description": "Shared model base so all contracts behave consistently.",
+        "properties": {
+          "evidence_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidence Ids",
+            "type": "array"
+          },
+          "fix": {
+            "title": "Fix",
+            "type": "string"
+          },
+          "generic": {
+            "default": false,
+            "title": "Generic",
+            "type": "boolean"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "fix"
+        ],
+        "title": "BJJMistake",
+        "type": "object"
+      },
+      "BJJNextStep": {
+        "additionalProperties": false,
+        "description": "Shared model base so all contracts behave consistently.",
+        "properties": {
+          "message": {
+            "default": "",
+            "title": "Message",
+            "type": "string"
+          },
+          "record_template": {
+            "default": "",
+            "title": "Record Template",
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/definitions/NextStepType"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "title": "BJJNextStep",
+        "type": "object"
+      },
+      "BJJObservation": {
+        "additionalProperties": false,
+        "description": "Shared model base so all contracts behave consistently.",
+        "properties": {
+          "evidence_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidence Ids",
+            "type": "array"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "BJJObservation",
+        "type": "object"
+      },
+      "BJJPlanBlock": {
+        "additionalProperties": false,
+        "description": "Shared model base so all contracts behave consistently.",
+        "properties": {
+          "evidence_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidence Ids",
+            "type": "array"
+          },
+          "generic": {
+            "default": false,
+            "title": "Generic",
+            "type": "boolean"
+          },
+          "preconditions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Preconditions",
+            "type": "array"
+          },
+          "steps": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Steps",
+            "type": "array"
+          },
+          "title": {
+            "default": "",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "title": "BJJPlanBlock",
+        "type": "object"
+      },
+      "BJJPlanBranch": {
+        "additionalProperties": false,
+        "description": "Shared model base so all contracts behave consistently.",
+        "properties": {
+          "evidence_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidence Ids",
+            "type": "array"
+          },
+          "generic": {
+            "default": false,
+            "title": "Generic",
+            "type": "boolean"
+          },
+          "if": {
+            "title": "If",
+            "type": "string"
+          },
+          "then": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Then",
+            "type": "array"
+          }
+        },
+        "required": [
+          "if"
+        ],
+        "title": "BJJPlanBranch",
+        "type": "object"
+      },
+      "BJJPlanCollection": {
+        "additionalProperties": false,
+        "description": "Shared model base so all contracts behave consistently.",
+        "properties": {
+          "A_baseline": {
+            "$ref": "#/definitions/BJJPlanBlock"
+          },
+          "B_offense": {
+            "$ref": "#/definitions/BJJPlanBlock"
+          },
+          "C_branch": {
+            "$ref": "#/definitions/BJJBranchPlan"
+          }
+        },
+        "title": "BJJPlanCollection",
+        "type": "object"
+      },
+      "BJJReasoningStatus": {
+        "additionalProperties": false,
+        "description": "Shared model base so all contracts behave consistently.",
+        "properties": {
+          "coach_clarify_round": {
+            "default": 0,
+            "maximum": 1,
+            "minimum": 0,
+            "title": "Coach Clarify Round",
+            "type": "integer"
+          },
+          "gate_label": {
+            "$ref": "#/definitions/GateLabel"
+          },
+          "reason_codes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Reason Codes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "gate_label"
+        ],
+        "title": "BJJReasoningStatus",
+        "type": "object"
+      },
+      "CharRange": {
+        "additionalProperties": false,
+        "description": "Shared model base so all contracts behave consistently.",
+        "properties": {
+          "end": {
+            "minimum": 0,
+            "title": "End",
+            "type": "integer"
+          },
+          "start": {
+            "minimum": 0,
+            "title": "Start",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ],
+        "title": "CharRange",
+        "type": "object"
+      },
+      "ChatClarifyTurnResponse": {
+        "additionalProperties": false,
+        "description": "Shared model base so all contracts behave consistently.",
+        "properties": {
+          "conversation_id": {
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "response": {
+            "$ref": "#/definitions/ClarifyRequest"
+          },
+          "response_type": {
+            "default": "clarify_request",
+            "enum": [
+              "clarify_request"
+            ],
+            "title": "Response Type",
+            "type": "string"
+          },
+          "trace_id": {
+            "title": "Trace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "trace_id",
+          "conversation_id",
+          "response"
+        ],
+        "title": "ChatClarifyTurnResponse",
+        "type": "object"
+      },
+      "ChatFinalTurnResponse": {
+        "additionalProperties": false,
+        "description": "Shared model base so all contracts behave consistently.",
+        "properties": {
+          "conversation_id": {
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "response": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/BJJFullAnswer"
+              },
+              {
+                "$ref": "#/definitions/BJJAmbiguousFinalAnswer"
+              },
+              {
+                "$ref": "#/definitions/BJJLowEvidenceAnswer"
+              },
+              {
+                "$ref": "#/definitions/LiteraryFinalAnswer"
+              }
+            ],
+            "title": "Response"
+          },
+          "response_type": {
+            "default": "final_answer",
+            "enum": [
+              "final_answer"
+            ],
+            "title": "Response Type",
+            "type": "string"
+          },
+          "trace_id": {
+            "title": "Trace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "trace_id",
+          "conversation_id",
+          "response"
+        ],
+        "title": "ChatFinalTurnResponse",
+        "type": "object"
+      },
+      "ClarifyRequest": {
+        "additionalProperties": false,
+        "description": "Shared model base so all contracts behave consistently.",
+        "properties": {
+          "options": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Options",
+            "type": "array"
+          },
+          "round": {
+            "title": "Round",
+            "type": "integer"
+          },
+          "slot": {
+            "$ref": "#/definitions/ClarifySlot"
+          },
+          "template_id": {
+            "title": "Template Id",
+            "type": "string"
+          },
+          "who": {
+            "$ref": "#/definitions/ClarifyWho"
+          },
+          "why": {
+            "title": "Why",
+            "type": "string"
+          }
+        },
+        "required": [
+          "who",
+          "slot",
+          "template_id",
+          "round",
+          "why"
+        ],
+        "title": "ClarifyRequest",
+        "type": "object"
+      },
+      "ClarifySlot": {
+        "description": "An enumeration.",
+        "enum": [
+          "domain",
+          "position",
+          "orientation",
+          "distance",
+          "goal",
+          "date_range",
+          "opponent_control"
+        ],
+        "title": "ClarifySlot",
+        "type": "string"
+      },
+      "ClarifyWho": {
+        "description": "An enumeration.",
+        "enum": [
+          "ORCHESTRATOR",
+          "BJJ_COACH"
+        ],
+        "title": "ClarifyWho",
+        "type": "string"
+      },
+      "DrillStart": {
+        "additionalProperties": false,
+        "description": "Shared model base so all contracts behave consistently.",
+        "properties": {
+          "distance": {
+            "default": "",
+            "title": "Distance",
+            "type": "string"
+          },
+          "orientation": {
+            "default": "",
+            "title": "Orientation",
+            "type": "string"
+          },
+          "position": {
+            "default": "",
+            "title": "Position",
+            "type": "string"
+          }
+        },
+        "title": "DrillStart",
+        "type": "object"
+      },
+      "GateLabel": {
+        "description": "An enumeration.",
+        "enum": [
+          "HIGH_EVIDENCE",
+          "AMBIGUOUS",
+          "LOW_EVIDENCE"
+        ],
+        "title": "GateLabel",
+        "type": "string"
+      },
+      "LineRange": {
+        "additionalProperties": false,
+        "description": "Shared model base so all contracts behave consistently.",
+        "properties": {
+          "end": {
+            "minimum": 1,
+            "title": "End",
+            "type": "integer"
+          },
+          "start": {
+            "minimum": 1,
+            "title": "Start",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ],
+        "title": "LineRange",
+        "type": "object"
+      },
+      "LiteraryAnchor": {
+        "additionalProperties": false,
+        "description": "Shared model base so all contracts behave consistently.",
+        "properties": {
+          "citation": {
+            "title": "Citation",
+            "type": "string"
+          },
+          "doc_version_id": {
+            "title": "Doc Version Id",
+            "type": "string"
+          },
+          "evidence_id": {
+            "title": "Evidence Id",
+            "type": "string"
+          },
+          "heading_path": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Heading Path",
+            "type": "array"
+          },
+          "locator": {
+            "$ref": "#/definitions/SourceLocator"
+          }
+        },
+        "required": [
+          "evidence_id",
+          "doc_version_id",
+          "locator",
+          "citation"
+        ],
+        "title": "LiteraryAnchor",
+        "type": "object"
+      },
+      "LiteraryFinalAnswer": {
+        "additionalProperties": false,
+        "description": "Shared model base so all contracts behave consistently.",
+        "properties": {
+          "anchors": {
+            "items": {
+              "$ref": "#/definitions/LiteraryAnchor"
+            },
+            "title": "Anchors",
+            "type": "array"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "LiteraryFinalAnswer",
+        "type": "object"
+      },
+      "NextStepType": {
+        "description": "An enumeration.",
+        "enum": [
+          "NONE",
+          "RECORD_SUGGESTION",
+          "QUERY_REFINE"
+        ],
+        "title": "NextStepType",
+        "type": "string"
+      },
+      "SourceLocator": {
+        "additionalProperties": false,
+        "description": "Shared model base so all contracts behave consistently.",
+        "properties": {
+          "char_range": {
+            "$ref": "#/definitions/CharRange"
+          },
+          "doc_version_id": {
+            "title": "Doc Version Id",
+            "type": "string"
+          },
+          "line_range": {
+            "$ref": "#/definitions/LineRange"
+          },
+          "source_path": {
+            "title": "Source Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "doc_version_id",
+          "line_range",
+          "char_range"
+        ],
+        "title": "SourceLocator",
+        "type": "object"
+      }
+    },
+    "description": "Shared model base so all contracts behave consistently.",
+    "properties": {
+      "conversation_id": {
+        "title": "Conversation Id",
+        "type": "string"
+      },
+      "event_type": {
+        "default": "completed",
+        "enum": [
+          "completed"
+        ],
+        "title": "Event Type",
+        "type": "string"
+      },
+      "payload": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/ChatClarifyTurnResponse"
+          },
+          {
+            "$ref": "#/definitions/ChatFinalTurnResponse"
+          }
+        ],
+        "title": "Payload"
+      }
+    },
+    "required": [
+      "conversation_id",
+      "payload"
+    ],
+    "title": "ChatStreamCompletedEvent",
+    "type": "object"
+  },
+  "chat_stream_failed_event": {
+    "additionalProperties": false,
+    "description": "Shared model base so all contracts behave consistently.",
+    "properties": {
+      "conversation_id": {
+        "title": "Conversation Id",
+        "type": "string"
+      },
+      "detail": {
+        "title": "Detail",
+        "type": "string"
+      },
+      "event_type": {
+        "default": "failed",
+        "enum": [
+          "failed"
+        ],
+        "title": "Event Type",
+        "type": "string"
+      }
+    },
+    "required": [
+      "detail"
+    ],
+    "title": "ChatStreamFailedEvent",
+    "type": "object"
+  },
+  "chat_stream_progress_event": {
+    "additionalProperties": false,
+    "description": "Shared model base so all contracts behave consistently.",
+    "properties": {
+      "conversation_id": {
+        "title": "Conversation Id",
+        "type": "string"
+      },
+      "event_type": {
+        "default": "progress",
+        "enum": [
+          "progress"
+        ],
+        "title": "Event Type",
+        "type": "string"
+      },
+      "message": {
+        "title": "Message",
+        "type": "string"
+      },
+      "stage": {
+        "enum": [
+          "orchestrator",
+          "retrieval",
+          "generation"
+        ],
+        "title": "Stage",
+        "type": "string"
+      }
+    },
+    "required": [
+      "conversation_id",
+      "stage",
+      "message"
+    ],
+    "title": "ChatStreamProgressEvent",
+    "type": "object"
+  },
+  "chat_stream_started_event": {
+    "additionalProperties": false,
+    "description": "Shared model base so all contracts behave consistently.",
+    "properties": {
+      "conversation_id": {
+        "title": "Conversation Id",
+        "type": "string"
+      },
+      "event_type": {
+        "default": "started",
+        "enum": [
+          "started"
+        ],
+        "title": "Event Type",
+        "type": "string"
+      },
+      "message": {
+        "title": "Message",
+        "type": "string"
+      }
+    },
+    "required": [
+      "conversation_id",
+      "message"
+    ],
+    "title": "ChatStreamStartedEvent",
+    "type": "object"
+  },
   "chunk_record": {
     "additionalProperties": false,
     "definitions": {

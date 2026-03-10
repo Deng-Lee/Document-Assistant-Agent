@@ -3,12 +3,20 @@
 import { useState, useTransition } from "react";
 
 import JsonCard from "@/components/json-card";
-import { apiPost } from "@/lib/api";
+import { apiPostEventStream } from "@/lib/chat-stream";
+
+const CHAT_STREAM_CONTRACTS = [
+  "chat_stream_started_event",
+  "chat_stream_progress_event",
+  "chat_stream_completed_event",
+  "chat_stream_failed_event",
+];
 
 export default function ChatClient() {
   const [conversationId, setConversationId] = useState("");
   const [message, setMessage] = useState("龟防怎么破解？我总是被人拉回去。");
   const [response, setResponse] = useState(null);
+  const [streamEvents, setStreamEvents] = useState([]);
   const [error, setError] = useState("");
   const [isPending, startTransition] = useTransition();
 
@@ -17,13 +25,25 @@ export default function ChatClient() {
     startTransition(async () => {
       try {
         setError("");
-        const result = await apiPost("/api/chat/turn", {
+        setResponse(null);
+        setStreamEvents([]);
+        const result = await apiPostEventStream("/api/chat/stream", {
           conversation_id: conversationId.trim() || null,
           user_message: message,
-        }, { responseContract: ["chat_clarify_turn_response", "chat_final_turn_response"] });
-        setResponse(result);
-        if (result.conversation_id) {
-          setConversationId(result.conversation_id);
+        }, {
+          responseContract: CHAT_STREAM_CONTRACTS,
+          onEvent: ({ payload }) => {
+            setStreamEvents((current) => [...current, payload]);
+            if (payload.conversation_id) {
+              setConversationId(payload.conversation_id);
+            }
+            if (payload.event_type === "completed") {
+              setResponse(payload.payload);
+            }
+          },
+        });
+        if (result?.event_type === "completed") {
+          setResponse(result.payload);
         }
       } catch (submitError) {
         setError(submitError.message);
@@ -37,7 +57,7 @@ export default function ChatClient() {
         <p className="eyebrow">Chat</p>
         <h2>对话编排与澄清循环。</h2>
         <p className="hero-copy">
-          这里直接打 `/api/chat/turn`，保留当前 Orchestrator、BJJ Coach、Literary agent 和 trace 写入链路。
+          这里通过 `/api/chat/stream` 走 SSE，把 Orchestrator、retrieval、generation 的阶段性状态直接映射到页面上。
         </p>
       </section>
 
@@ -60,7 +80,7 @@ export default function ChatClient() {
             </label>
             <div className="button-row">
               <button type="submit" className="button-primary" disabled={isPending}>
-                {isPending ? "处理中..." : "发送消息"}
+                {isPending ? "流式处理中..." : "流式发送消息"}
               </button>
               <button
                 type="button"
@@ -76,6 +96,37 @@ export default function ChatClient() {
             </div>
             {error ? <p className="helper-text">{error}</p> : null}
           </form>
+        </section>
+
+        <section className="panel">
+          <div className="panel-head">
+            <div>
+              <p className="section-kicker">Streaming</p>
+              <h3 className="panel-title">阶段事件</h3>
+            </div>
+          </div>
+          <div className="stack">
+            {streamEvents.length === 0 ? (
+              <p className="muted">等待第一次流式 turn。</p>
+            ) : (
+              streamEvents.map((eventPayload, index) => (
+                <article key={`${eventPayload.event_type}-${index}`} className="trace-row">
+                  <div>
+                    <strong>{eventPayload.event_type}</strong>
+                    <div className="pill-row">
+                      <span className="tiny-pill">{eventPayload.conversation_id || "pending"}</span>
+                      {"stage" in eventPayload ? <span className="tiny-pill">{eventPayload.stage}</span> : null}
+                    </div>
+                  </div>
+                  <p className="muted">
+                    {"message" in eventPayload
+                      ? eventPayload.message
+                      : eventPayload.payload?.response_type || eventPayload.detail}
+                  </p>
+                </article>
+              ))
+            )}
+          </div>
         </section>
 
         <JsonCard title="最新对话返回" value={response} empty="等待第一次 turn。" />

@@ -3,7 +3,16 @@ from __future__ import annotations
 from typing import Any
 
 from .bjj import BJJValidatorReport, BJJAmbiguousFinalAnswer, BJJFullAnswer, BJJLowEvidenceAnswer
-from .chat import ChatClarifyTurnResponse, ChatFinalTurnResponse, ClarifyRequest, LiteraryFinalAnswer
+from .chat import (
+    ChatClarifyTurnResponse,
+    ChatFinalTurnResponse,
+    ChatStreamCompletedEvent,
+    ChatStreamFailedEvent,
+    ChatStreamProgressEvent,
+    ChatStreamStartedEvent,
+    ClarifyRequest,
+    LiteraryFinalAnswer,
+)
 from .documents import BJJRecordFields, ChunkRecord, DocVersionRecord, DocumentRecord
 from .evaluation import EvalRunRequest, EvalRunResult, GoldenCase, ManualRubricEntry, ManualRubricScore
 from .evidence import EvidencePack, EvidencePackItem
@@ -30,6 +39,10 @@ SCHEMA_MODELS = {
     "clarify_request": ClarifyRequest,
     "chat_clarify_turn_response": ChatClarifyTurnResponse,
     "chat_final_turn_response": ChatFinalTurnResponse,
+    "chat_stream_started_event": ChatStreamStartedEvent,
+    "chat_stream_progress_event": ChatStreamProgressEvent,
+    "chat_stream_completed_event": ChatStreamCompletedEvent,
+    "chat_stream_failed_event": ChatStreamFailedEvent,
     "bjj_full_answer": BJJFullAnswer,
     "bjj_ambiguous_final_answer": BJJAmbiguousFinalAnswer,
     "bjj_low_evidence_answer": BJJLowEvidenceAnswer,
