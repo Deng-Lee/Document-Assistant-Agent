@@ -197,6 +197,11 @@ class EvaluationAndSFTTests(unittest.TestCase):
             self.assertEqual(metrics["faithfulness"], 0.91)
             self.assertEqual(metrics["answer_relevancy"], 0.83)
             self.assertEqual(result.judge.details["score"], 0.87)
+            status = service.provider_status()
+            self.assertEqual(status["ragas"]["evaluator_name"], "openai_ragas_proxy_v1")
+            self.assertTrue(status["ragas"]["configured"])
+            self.assertEqual(status["judge"]["evaluator_name"], "openai_judge_v1")
+            self.assertTrue(status["judge"]["configured"])
 
     def test_evaluation_real_profile_provider_unavailable_marks_run_partial(self) -> None:
         with TemporaryDirectory() as tmp:

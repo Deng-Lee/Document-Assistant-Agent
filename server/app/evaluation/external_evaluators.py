@@ -71,6 +71,10 @@ class OpenAIExternalRagasEvaluator:
             else None
         )
 
+    @property
+    def is_ready(self) -> bool:
+        return bool(self.api_key and self.transport is not None)
+
     def evaluate(self, golden_cases: list[GoldenCase], traces: list[TraceRecord]) -> EvalStageResult:
         if not self.api_key or self.transport is None:
             raise ExternalEvaluatorUnavailableError("missing_openai_api_key")
@@ -135,6 +139,10 @@ class OpenAIExternalJudgeEvaluator:
             if self.api_key
             else None
         )
+
+    @property
+    def is_ready(self) -> bool:
+        return bool(self.api_key and self.transport is not None)
 
     def evaluate(self, golden_cases: list[GoldenCase], traces: list[TraceRecord]) -> EvalStageResult:
         if not self.api_key or self.transport is None:

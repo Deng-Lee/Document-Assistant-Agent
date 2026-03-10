@@ -18,7 +18,7 @@
 | Orchestrator | `done` | probe、plan_check、clarify、fake mock replan、real-profile OpenAI-compatible replan provider、fallback telemetry 已接通 | 无关键断裂点 |
 | Agents | `done` | BJJ coach、literary、validator-safe path 已可运行 | 无关键断裂点 |
 | Observability + Replay | `done` | minimal/debug capture、trace detail、frozen replay 已接通 | 无关键断裂点 |
-| Evaluation | `partial` | golden set、frozen replay、hard metrics、partial-result flow 已接通 | RAGAS/judge 仍是 surrogate/heuristic；manual rubric 未接入 |
+| Evaluation | `partial` | golden set、frozen replay、hard metrics、OpenAI-compatible external RAGAS/judge、partial-result flow 已接通 | manual rubric 未接入 |
 | SFT | `partial` | dataset export、train rows、policy artifact、registry/replay/eval wiring 已接通 | 训练 backend 仍是 `local_policy_memory_v1`，不是真实 LoRA/QLoRA |
 | API | `done` | ingest/chat/retrieve/traces/replay/eval/sft/profile API 已有 | 无关键断裂点 |
 | Profile Persistence | `done` | SQLite 持久化、启动恢复、history API 已接通 | 无关键断裂点 |
@@ -27,9 +27,9 @@
 
 ## Highest-Priority Remaining Work
 
-1. 把 Evaluation 的 surrogate RAGAS / heuristic judge 升级为真实外部评测器。
-2. 把 SFT 的 `local_policy_memory_v1` 升级为真实 LoRA/QLoRA 训练闭环。
-3. 补前后端类型自动同步、SSE/streaming 和浏览器级端到端回归。
+1. 把 SFT 的 `local_policy_memory_v1` 升级为真实 LoRA/QLoRA 训练闭环。
+2. 补前后端类型自动同步、SSE/streaming 和浏览器级端到端回归。
+3. 为 Evaluation 接入 manual rubric。
 
 ## Notes
 

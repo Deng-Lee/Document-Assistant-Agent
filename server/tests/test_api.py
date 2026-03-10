@@ -359,6 +359,13 @@ class APITests(unittest.TestCase):
                 self.assertEqual(status["provider_name"], "OpenAIReplanProvider")
                 self.assertTrue(status["configured"])
                 self.assertEqual(status["base_url"], "https://example.invalid/v1")
+                eval_status = state.evaluation_service.provider_status()
+                self.assertEqual(eval_status["ragas"]["evaluator_name"], "openai_ragas_proxy_v1")
+                self.assertTrue(eval_status["ragas"]["configured"])
+                self.assertEqual(eval_status["ragas"]["base_url"], "https://example.invalid/v1")
+                self.assertEqual(eval_status["judge"]["evaluator_name"], "openai_judge_v1")
+                self.assertTrue(eval_status["judge"]["configured"])
+                self.assertEqual(eval_status["judge"]["base_url"], "https://example.invalid/v1")
         finally:
             for key, value in original.items():
                 if value is None:

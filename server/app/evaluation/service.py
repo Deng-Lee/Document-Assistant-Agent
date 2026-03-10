@@ -57,6 +57,12 @@ class EvaluationService:
         self.ragas_runner = ragas_runner or self._run_ragas
         self.judge_runner = judge_runner or self._run_judge
 
+    def provider_status(self) -> dict[str, dict[str, object]]:
+        return {
+            "ragas": _provider_status(self.runtime_config, self.ragas_evaluator),
+            "judge": _provider_status(self.runtime_config, self.judge_evaluator),
+        }
+
     def run(self, request: EvalRunRequest, trace_ids: list[str] | None = None) -> EvalRunResult:
         golden_cases = self._load_golden_cases(request.eval_set_id)
         traces = self._load_traces(trace_ids, golden_cases)
@@ -188,3 +194,13 @@ class EvaluationService:
 def _eval_run_id(eval_set_id: str, model_variant: ModelVariant) -> str:
     payload = f"{eval_set_id}:{model_variant.value}:{datetime.utcnow().isoformat()}"
     return f"eval_{sha1(payload.encode('utf-8')).hexdigest()[:12]}"
+
+
+def _provider_status(runtime_config: RuntimeConfigSnapshot, evaluator: object) -> dict[str, object]:
+    transport = getattr(evaluator, "transport", None)
+    return {
+        "profile_name": runtime_config.model_routing.profile_name,
+        "evaluator_name": getattr(evaluator, "evaluator_name", evaluator.__class__.__name__),
+        "configured": bool(getattr(evaluator, "is_ready", False)),
+        "base_url": getattr(transport, "base_url", None),
+    }

@@ -64,6 +64,21 @@ Notes:
 - Result:
   - passed
 
+### 2026-03-10: Real Evaluation Provider Smoke
+- Modules:
+  - `server/app/evaluation`
+  - `server/app/api`
+  - `server/app/core/openai_chat.py`
+- Goal:
+  - verify a `real` profile app state built from local env credentials wires ready OpenAI-compatible RAGAS and judge evaluators
+- Coverage:
+  - `.env` loading into app state
+  - `real` runtime config selection
+  - evaluation provider readiness status
+  - configured `OPENAI_BASE_URL` propagation to both evaluators
+- Result:
+  - passed
+
 ### 2026-03-07: Core Schema Smoke
 - Modules:
   - `server/app/core`

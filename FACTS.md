@@ -78,7 +78,7 @@
   - repo-file golden set loader
   - frozen replay eval
   - hard metrics
-  - `real` profile 下 surrogate RAGAS / heuristic judge
+  - `real` profile 下的 OpenAI-compatible RAGAS / judge external evaluators
   - partial-result handling
 - SFT 已支持：
   - dataset export
@@ -102,7 +102,6 @@
   - 尚未接入 SSE/streaming 与更完整的页面工作流
 - Evaluation 仍是部分实现：
   - hard metrics、golden set、frozen replay 已有
-  - 但 RAGAS / judge 目前是本地 surrogate / heuristic 实现
   - manual rubric 未接入
 - SFT 仍是部分实现：
   - 当前训练后端为 `local_policy_memory_v1`
@@ -119,16 +118,13 @@
   - `read_write_lock.py` 的 `notifyAll()` deprecation warning
 - 为兼容 `numpy 2.x`，向量适配层里保留了 `np.NaN` 兼容补丁。
 - 网络依赖的真实 provider 能力尚未在仓库里形成可离线验证的闭环：
-  - real-profile replan provider
-  - 外部 RAGAS / judge provider
   - 真实 LoRA/QLoRA 训练 backend
 
 ## Planning Implication
 - 该仓库已不再是 greenfield / spec-only 状态。
 - 后端 V1 主链路已基本闭合，接下来的优先事项应聚焦于：
-  - `real` profile 下的真实 replan provider
-  - Evaluation 外部评测器接入
   - 真实训练 backend 接入
+  - Evaluation manual rubric
 - 变更前应优先参考：
   - `IMPLEMENTATION_PLAN.md`
   - `to_do.md`
