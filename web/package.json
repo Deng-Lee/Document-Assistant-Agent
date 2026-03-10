@@ -5,6 +5,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "contracts:sync": "python3 ../scripts/sync_web_contracts.py",
+    "contracts:check": "python3 ../scripts/sync_web_contracts.py --check",
     "test": "vitest run"
   },
   "dependencies": {

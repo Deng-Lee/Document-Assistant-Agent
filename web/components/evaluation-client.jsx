@@ -25,7 +25,7 @@ export default function EvaluationClient() {
   async function refreshRuns() {
     try {
       setError("");
-      const payload = await apiGet("/api/eval/results");
+      const payload = await apiGet("/api/eval/results", { responseContract: "eval_results_response" });
       setRuns(payload.runs || []);
     } catch (refreshError) {
       setError(refreshError.message);
@@ -50,7 +50,7 @@ export default function EvaluationClient() {
             .split(",")
             .map((item) => item.trim())
             .filter(Boolean),
-        });
+        }, { responseContract: "eval_run_launch_response" });
         setLaunchPayload(result);
         await refreshRuns();
       } catch (submitError) {

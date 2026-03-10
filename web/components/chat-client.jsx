@@ -20,7 +20,7 @@ export default function ChatClient() {
         const result = await apiPost("/api/chat/turn", {
           conversation_id: conversationId.trim() || null,
           user_message: message,
-        });
+        }, { responseContract: ["chat_clarify_turn_response", "chat_final_turn_response"] });
         setResponse(result);
         if (result.conversation_id) {
           setConversationId(result.conversation_id);

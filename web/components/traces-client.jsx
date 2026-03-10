@@ -22,7 +22,7 @@ export default function TracesClient() {
   async function refreshTraces() {
     try {
       setError("");
-      const payload = await apiGet("/api/traces");
+      const payload = await apiGet("/api/traces", { responseContract: "traces_list_response" });
       const nextTraces = payload.traces || [];
       setTraces(nextTraces);
       if (!selectedTraceId && nextTraces[0]) {
@@ -37,7 +37,7 @@ export default function TracesClient() {
   async function loadTrace(traceId) {
     try {
       setError("");
-      const detail = await apiGet(`/api/traces/${traceId}`);
+      const detail = await apiGet(`/api/traces/${traceId}`, { responseContract: "trace_record" });
       setSelectedTraceId(traceId);
       setTraceDetail(detail);
       setReplayPayload(null);
@@ -57,7 +57,7 @@ export default function TracesClient() {
           model_variant: "base",
           use_frozen_evidence: true,
           override_generation_config: {},
-        });
+        }, { responseContract: "replay_trace_response" });
         setReplayPayload(replay);
       } catch (replayError) {
         setError(replayError.message);

@@ -34,9 +34,9 @@ export default function DashboardClient() {
     try {
       setError("");
       const [healthResponse, tracesResponse, evalResponse] = await Promise.all([
-        apiGet("/api/health"),
-        apiGet("/api/traces"),
-        apiGet("/api/eval/results"),
+        apiGet("/api/health", { responseContract: "health_response" }),
+        apiGet("/api/traces", { responseContract: "traces_list_response" }),
+        apiGet("/api/eval/results", { responseContract: "eval_results_response" }),
       ]);
       setHealth(healthResponse);
       setTraces(tracesResponse.traces || []);
@@ -60,7 +60,7 @@ export default function DashboardClient() {
         const result = await apiPost("/api/ingest/text", {
           ...ingestPayload,
           source_path_hint: ingestPayload.source_path_hint || null,
-        });
+        }, { responseContract: "ingest_text_response" });
         setIngestResult(result);
         await refreshDashboard();
       } catch (submitError) {

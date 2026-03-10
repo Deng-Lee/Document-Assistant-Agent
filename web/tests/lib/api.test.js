@@ -11,7 +11,7 @@ describe("web api client", () => {
   it("returns parsed JSON for successful requests", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => createJsonResponse({ status: "ok" })));
 
-    await expect(apiGet("/api/health")).resolves.toEqual({ status: "ok" });
+    await expect(apiGet("/api/health", { responseContract: "health_response" })).resolves.toEqual({ status: "ok" });
   });
 
   it("raises backend detail for failed requests", async () => {
@@ -24,6 +24,12 @@ describe("web api client", () => {
     vi.stubGlobal("fetch", vi.fn(async () => createTextResponse("not-json", 200)));
 
     await expect(apiGet("/api/health")).rejects.toThrow("Invalid JSON response");
+  });
+
+  it("raises a contract mismatch when the response shape drifts", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => createJsonResponse({ ok: true })));
+
+    await expect(apiGet("/api/health", { responseContract: "health_response" })).rejects.toThrow("Contract mismatch");
   });
 
   it("returns the configured backend hint when no override is present", () => {

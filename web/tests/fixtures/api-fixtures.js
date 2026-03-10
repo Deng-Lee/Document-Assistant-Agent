@@ -29,6 +29,28 @@ export const traceSummariesFixture = [
 
 export const traceDetailFixture = {
   trace_id: "trace_dash_001",
+  runtime_config_snapshot: {
+    embedding_version_id: "mock-embedding-v1",
+    prompt_versions: {
+      bjj_coach: "bjj.v1",
+      literary: "literary.v1",
+      safe_summary: "safe-summary.v1",
+      replan: "replan.v1",
+    },
+    policy_version: "BASE",
+    trace_capture_level: "minimal",
+    retrieval: {},
+    orchestrator: {},
+    bjj_gate: {},
+    model_routing: {
+      profile_name: "fake",
+      provider: "mock",
+      base_model: "mock-bjj-base",
+      policy_model: "policy://pending",
+      embedding_model: "mock-embedding-model",
+    },
+    generation: {},
+  },
   request_log: {
     entrypoint: "chat",
     task: "coach",
