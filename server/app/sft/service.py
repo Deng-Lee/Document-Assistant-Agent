@@ -28,14 +28,24 @@ from server.app.agents.bjj_coach.types import BJJCoachInput
 from server.app.agents.bjj_coach.validator import validate_bjj_answer
 from server.app.observability import TraceRecorder, build_generation_input_snapshot, build_prompt_snapshot
 from server.app.storage import TraceStore
+from .training_backend import HFLoRAQLoRATrainingBackend, PolicyTrainingBackend
 
 
 class SFTService:
-    def __init__(self, trace_store: TraceStore, policy_root: str | Path | None = None):
+    def __init__(
+        self,
+        trace_store: TraceStore,
+        policy_root: str | Path | None = None,
+        training_backend: PolicyTrainingBackend | None = None,
+    ):
         self.trace_store = trace_store
         self.policy_root = Path(policy_root).resolve() if policy_root is not None else None
+        self.training_backend = training_backend or HFLoRAQLoRATrainingBackend()
         if self.policy_root is not None:
             self.policy_root.mkdir(parents=True, exist_ok=True)
+
+    def training_backend_status(self) -> dict[str, object]:
+        return self.training_backend.status()
 
     def export_dataset(
         self,
@@ -103,6 +113,8 @@ class SFTService:
             raise ValueError("Empty train.jsonl")
         if request.dry_run:
             raise ValueError("V1 requires a real training run; dry_run is not sufficient for policy activation")
+        resolved_request = _copy_model(request)
+        resolved_request.base_model = request.base_model or build_runtime_config().model_routing.base_model
 
         learned_examples: dict[str, dict[str, Any]] = {}
         target_row_count = 0
@@ -119,24 +131,42 @@ class SFTService:
             target_row_count += 1
 
         manifest = dataset_manifest or self._load_or_build_manifest(train_path, len(rows))
+        training_artifact = self.training_backend.run(resolved_request)
         checkpoint = self.register_policy_checkpoint(
             output_dir=output_dir,
-            base_model=request.base_model or build_runtime_config().model_routing.base_model,
+            base_model=resolved_request.base_model or build_runtime_config().model_routing.base_model,
             dataset_manifest=manifest,
             target_row_count=target_row_count,
+            training_backend=training_artifact.backend_name,
         )
         artifact_payload = {
-            "schema_version": "local_policy_memory_v1",
+            "schema_version": training_artifact.schema_version,
             "created_at": datetime.utcnow().isoformat(),
             "policy_model_ref": checkpoint.policy_model_ref,
             "base_model": checkpoint.base_model,
             "train_path": str(train_path),
             "target_row_count": target_row_count,
+            "training_backend": training_artifact.backend_name,
+            "training_config": {
+                "epochs": resolved_request.epochs,
+                "learning_rate": resolved_request.learning_rate,
+                "batch_size": resolved_request.batch_size,
+                "max_seq_len": resolved_request.max_seq_len,
+                "lora_r": resolved_request.lora_r,
+                "lora_alpha": resolved_request.lora_alpha,
+                "lora_dropout": resolved_request.lora_dropout,
+                "lora_targets": list(resolved_request.lora_targets),
+                "load_in_4bit": resolved_request.load_in_4bit,
+            },
+            "adapter_path": training_artifact.adapter_path,
+            "tokenizer_path": training_artifact.tokenizer_path,
+            "training_summary_path": training_artifact.training_summary_path,
+            "training_metadata": _to_jsonable(training_artifact.metadata),
             "examples": learned_examples,
         }
         self._write_json(output_dir / "policy_artifact.json", artifact_payload)
         self._register_policy_artifact(checkpoint, output_dir / "policy_artifact.json")
-        if request.activate:
+        if resolved_request.activate:
             self.set_active_policy_ref(checkpoint.policy_model_ref)
         return checkpoint
 
@@ -146,6 +176,7 @@ class SFTService:
         base_model: str,
         dataset_manifest: SFTDatasetManifest,
         target_row_count: int = 0,
+        training_backend: str = "hf_lora_qlora_v1",
     ) -> PolicyCheckpointRecord:
         checkpoint_dir = Path(output_dir)
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
@@ -161,6 +192,7 @@ class SFTService:
             checkpoint_path=str(checkpoint_dir),
             base_model=base_model,
             policy_model_ref=f"policy://{run_id}",
+            training_backend=training_backend,
             target_row_count=target_row_count,
         )
         self._write_json(checkpoint_dir / "checkpoint_manifest.json", _to_jsonable(record))

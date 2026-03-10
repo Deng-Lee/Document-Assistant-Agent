@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import json
 import unittest
-from tempfile import TemporaryDirectory
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from server.tests.support import activate_test_profile, make_trace_record
 
@@ -264,7 +264,11 @@ class EvaluationAndSFTTests(unittest.TestCase):
             from server.app.core import ModelVariant, SFTExportRequest, build_runtime_config
             from server.app.sft import SFTService
 
-            service = SFTService(trace_store=trace_store, policy_root=f"{tmp}/policies")
+            service = SFTService(
+                trace_store=trace_store,
+                policy_root=f"{tmp}/policies",
+                training_backend=_StubTrainingBackend(),
+            )
             export_dir = f"{tmp}/datasets/sft/v1/test_suite"
             manifest, samples = service.export_dataset(
                 request=SFTExportRequest(trace_filter={"gate_label": "HIGH_EVIDENCE"}),
@@ -319,7 +323,11 @@ class EvaluationAndSFTTests(unittest.TestCase):
             from server.app.sft import SFTService
 
             runtime_config = build_runtime_config()
-            service = SFTService(trace_store=trace_store, policy_root=f"{tmp}/policies")
+            service = SFTService(
+                trace_store=trace_store,
+                policy_root=f"{tmp}/policies",
+                training_backend=_StubTrainingBackend(),
+            )
             export_dir = Path(tmp) / "datasets" / "sft" / "v1" / "policy_suite"
             manifest, samples = service.export_dataset(
                 request=SFTExportRequest(trace_filter={"gate_label": "HIGH_EVIDENCE"}),
@@ -341,8 +349,15 @@ class EvaluationAndSFTTests(unittest.TestCase):
                 dataset_manifest=manifest,
             )
 
-            self.assertTrue((Path(tmp) / "policy_ckpt" / "policy_artifact.json").exists())
+            policy_dir = Path(tmp) / "policy_ckpt"
+            self.assertTrue((policy_dir / "policy_artifact.json").exists())
             self.assertEqual(service.get_active_policy_ref(), checkpoint.policy_model_ref)
+            self.assertEqual(checkpoint.training_backend, "hf_lora_qlora_v1")
+            artifact = json.loads((policy_dir / "policy_artifact.json").read_text(encoding="utf-8"))
+            self.assertEqual(artifact["schema_version"], "hf_lora_qlora_v1")
+            self.assertTrue((policy_dir / "adapter").exists())
+            self.assertTrue((policy_dir / "tokenizer").exists())
+            self.assertEqual(service.training_backend_status()["backend_name"], "hf_lora_qlora_v1")
             replayed_trace, final_answer = service.replay_trace(
                 source_trace=trace,
                 variant=ModelVariant.POLICY,
@@ -422,3 +437,52 @@ class _StubEvalTransport:
     def create_chat_completion(self, payload):
         self.calls.append(payload)
         return self.response
+
+
+class _StubTrainingBackend:
+    backend_name = "hf_lora_qlora_v1"
+
+    def run(self, request):
+        from server.app.sft.training_backend import PolicyTrainingArtifact
+
+        output_dir = Path(request.output_path)
+        adapter_dir = output_dir / "adapter"
+        tokenizer_dir = output_dir / "tokenizer"
+        adapter_dir.mkdir(parents=True, exist_ok=True)
+        tokenizer_dir.mkdir(parents=True, exist_ok=True)
+        (adapter_dir / "adapter_config.json").write_text('{"stub":true}\n', encoding="utf-8")
+        (tokenizer_dir / "tokenizer_config.json").write_text('{"stub":true}\n', encoding="utf-8")
+        summary_path = output_dir / "training_summary.json"
+        summary_path.write_text(
+            json.dumps(
+                {
+                    "backend_name": self.backend_name,
+                    "base_model": request.base_model,
+                    "load_in_4bit": request.load_in_4bit,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        return PolicyTrainingArtifact(
+            backend_name=self.backend_name,
+            schema_version=self.backend_name,
+            adapter_path=str(adapter_dir),
+            tokenizer_path=str(tokenizer_dir),
+            training_summary_path=str(summary_path),
+            metadata={"runner": "stub"},
+        )
+
+    def status(self):
+        return {
+            "backend_name": self.backend_name,
+            "script_path": "/tmp/stub-train-policy-lora.py",
+            "script_exists": True,
+            "configured": True,
+            "missing_dependencies": [],
+            "qlora_supported": True,
+            "required_modules": {},
+            "optional_modules": {"bitsandbytes": True},
+        }

@@ -79,6 +79,37 @@ Notes:
 - Result:
   - passed
 
+### 2026-03-10: Real SFT Backend Readiness Smoke
+- Modules:
+  - `server/app/sft`
+  - `server/app/api`
+  - `scripts/train_policy_lora.py`
+- Goal:
+  - verify a `real` profile app state exposes the wired HF LoRA/QLoRA training backend, the runner script path, and dependency-readiness metadata
+- Coverage:
+  - `.env` loading into app state
+  - default SFT backend selection
+  - runner script discovery
+  - readiness status surface for missing training extras
+- Result:
+  - passed
+
+### 2026-03-10: SFT Artifact Wiring Smoke
+- Modules:
+  - `server/app/sft`
+  - `server/app/evaluation`
+- Goal:
+  - verify SFT export/train/register/replay/eval wiring remains intact while the default training backend is readiness-checked separately
+- Coverage:
+  - dataset export
+  - train row build
+  - stubbed training backend artifact generation
+  - registry activation
+  - policy replay
+  - policy eval replay
+- Result:
+  - passed
+
 ### 2026-03-07: Core Schema Smoke
 - Modules:
   - `server/app/core`

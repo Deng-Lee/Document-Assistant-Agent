@@ -88,6 +88,11 @@ def main() -> None:
             assert evaluation_status["judge"]["configured"] is True
             assert evaluation_status["judge"]["base_url"] == "https://smoke.example.invalid/v1"
             print("real_eval_provider_smoke_ok")
+            sft_status = real_state.sft_service.training_backend_status()
+            assert sft_status["backend_name"] == "hf_lora_qlora_v1"
+            assert sft_status["script_exists"] is True
+            assert sft_status["script_path"].endswith("scripts/train_policy_lora.py")
+            print("real_sft_backend_smoke_ok")
     finally:
         if original_profile is None:
             os.environ.pop("PDA_MODEL_PROFILE", None)
@@ -641,7 +646,11 @@ def main() -> None:
         assert evaluation.list_results()
         print("evaluation_smoke_ok")
 
-        sft = SFTService(trace_store=trace_store2, policy_root=root / "data" / "policies")
+        sft = SFTService(
+            trace_store=trace_store2,
+            policy_root=root / "data" / "policies",
+            training_backend=_SmokeTrainingBackend(),
+        )
         dataset_dir = root / "datasets" / "sft" / "v1" / "smoke"
         manifest, samples = sft.export_dataset(
             request=SFTExportRequest(trace_filter={}, format="jsonl"),
@@ -659,7 +668,12 @@ def main() -> None:
         train_request = sft.build_policy_train_request(train_path, root / "data" / "policy_checkpoints" / "smoke_run", dry_run=False)
         checkpoint = sft.train_policy(train_request, dataset_manifest=manifest)
         assert checkpoint.policy_model_ref.startswith("policy://")
+        assert checkpoint.training_backend == "hf_lora_qlora_v1"
         assert sft.get_active_policy_ref() == checkpoint.policy_model_ref
+        artifact_payload = json.loads((root / "data" / "policy_checkpoints" / "smoke_run" / "policy_artifact.json").read_text(encoding="utf-8"))
+        assert artifact_payload["schema_version"] == "hf_lora_qlora_v1"
+        assert artifact_payload["adapter_path"].endswith("/adapter")
+        assert artifact_payload["tokenizer_path"].endswith("/tokenizer")
         replayed_trace, replayed_answer = sft.replay_trace(
             source_trace=loaded_trace,
             variant=ModelVariant.POLICY,
@@ -699,6 +713,43 @@ def _utcnow():
     from datetime import datetime
 
     return datetime.utcnow()
+
+
+class _SmokeTrainingBackend:
+    backend_name = "hf_lora_qlora_v1"
+
+    def run(self, request):
+        from server.app.sft.training_backend import PolicyTrainingArtifact
+
+        output_dir = Path(request.output_path)
+        adapter_dir = output_dir / "adapter"
+        tokenizer_dir = output_dir / "tokenizer"
+        adapter_dir.mkdir(parents=True, exist_ok=True)
+        tokenizer_dir.mkdir(parents=True, exist_ok=True)
+        (adapter_dir / "adapter_config.json").write_text('{"smoke":true}\n', encoding="utf-8")
+        (tokenizer_dir / "tokenizer_config.json").write_text('{"smoke":true}\n', encoding="utf-8")
+        summary_path = output_dir / "training_summary.json"
+        summary_path.write_text('{"backend":"smoke_stub"}\n', encoding="utf-8")
+        return PolicyTrainingArtifact(
+            backend_name=self.backend_name,
+            schema_version=self.backend_name,
+            adapter_path=str(adapter_dir),
+            tokenizer_path=str(tokenizer_dir),
+            training_summary_path=str(summary_path),
+            metadata={"runner": "smoke_stub"},
+        )
+
+    def status(self):
+        return {
+            "backend_name": self.backend_name,
+            "script_path": "/tmp/smoke-train-policy-lora.py",
+            "script_exists": True,
+            "configured": True,
+            "missing_dependencies": [],
+            "qlora_supported": True,
+            "required_modules": {},
+            "optional_modules": {"bitsandbytes": True},
+        }
 
 
 def _date(year: int, month: int, day: int):

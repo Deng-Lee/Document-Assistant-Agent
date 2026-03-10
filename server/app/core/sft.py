@@ -45,7 +45,7 @@ class PolicyCheckpointRecord(SFTDatasetManifest):
     checkpoint_path: str
     base_model: str
     policy_model_ref: str
-    training_backend: str = "local_policy_memory_v1"
+    training_backend: str = "hf_lora_qlora_v1"
     target_row_count: int = Field(default=0, ge=0)
 
 
@@ -54,5 +54,15 @@ class PolicyTrainRequest(PDABaseModel):
     output_path: str
     base_model: str | None = None
     model_variant: ModelVariant = ModelVariant.POLICY
+    training_backend: str = "hf_lora_qlora_v1"
+    epochs: int = Field(default=1, ge=1)
+    learning_rate: float = Field(default=2e-4, gt=0)
+    batch_size: int = Field(default=1, ge=1)
+    max_seq_len: int = Field(default=2048, ge=1)
+    lora_r: int = Field(default=16, ge=1)
+    lora_alpha: int = Field(default=32, ge=1)
+    lora_dropout: float = Field(default=0.05, ge=0.0, le=1.0)
+    lora_targets: list[str] = Field(default_factory=list)
+    load_in_4bit: bool = False
     dry_run: bool = True
     activate: bool = True

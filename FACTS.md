@@ -83,7 +83,7 @@
 - SFT 已支持：
   - dataset export
   - train row build
-  - local policy artifact training/registration
+  - 真实 Hugging Face LoRA/QLoRA training runner + artifact registration
   - policy replay/eval wiring
 - API 与本地 UI 已支持：
   - FastAPI endpoints
@@ -104,8 +104,8 @@
   - hard metrics、golden set、frozen replay 已有
   - manual rubric 未接入
 - SFT 仍是部分实现：
-  - 当前训练后端为 `local_policy_memory_v1`
-  - 尚未接入 `DEV_SPEC.md` 预期的真实 LoRA/QLoRA 训练作业
+  - 真实 LoRA/QLoRA 训练 backend 已接入
+  - 但 frozen replay / eval 的 `policy` variant 仍使用 artifact sidecar 中的结构化 target outputs 做确定性对比，还不是本地 adapter 推理服务
 - 文档同步仍需持续维护：
   - `FACTS.md` 已更新到当前状态
   - 但仍需配合单独的完成度矩阵文档持续跟踪 done / partial / missing
@@ -117,13 +117,14 @@
 - Chroma 在当前环境下可工作，但其上游依赖会抛出非阻塞性 warning：
   - `read_write_lock.py` 的 `notifyAll()` deprecation warning
 - 为兼容 `numpy 2.x`，向量适配层里保留了 `np.NaN` 兼容补丁。
-- 网络依赖的真实 provider 能力尚未在仓库里形成可离线验证的闭环：
-  - 真实 LoRA/QLoRA 训练 backend
+- 真实 LoRA/QLoRA 训练依赖当前默认开发环境未内置：
+  - 需要额外安装 `.[training]`（`torch`、`transformers`、`peft`、`accelerate`、`datasets`）
+  - `bitsandbytes` 仅在需要 4-bit QLoRA 时额外安装
 
 ## Planning Implication
 - 该仓库已不再是 greenfield / spec-only 状态。
 - 后端 V1 主链路已基本闭合，接下来的优先事项应聚焦于：
-  - 真实训练 backend 接入
+  - adapter-backed policy inference / replay
   - Evaluation manual rubric
 - 变更前应优先参考：
   - `IMPLEMENTATION_PLAN.md`

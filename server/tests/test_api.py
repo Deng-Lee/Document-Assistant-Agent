@@ -239,6 +239,7 @@ class APITests(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             app = create_test_app(tmp)
             routes = endpoint_map(app)
+            app.state.pda.sft_service.training_backend = _StubTrainingBackend()
 
             from server.app.api.models import ReplayRequest, SFTTrainAPIRequest
             from server.app.core import SFTExportRequest
@@ -299,6 +300,7 @@ class APITests(unittest.TestCase):
                 )
             )
             self.assertTrue(train_payload["checkpoint"]["policy_model_ref"].startswith("policy://"))
+            self.assertEqual(train_payload["checkpoint"]["training_backend"], "hf_lora_qlora_v1")
             self.assertEqual(train_payload["active_policy_ref"], train_payload["checkpoint"]["policy_model_ref"])
 
             replay_payload = dump_result(
@@ -358,6 +360,14 @@ class APITests(unittest.TestCase):
                 self.assertEqual(status["profile_name"], "real")
                 self.assertEqual(status["provider_name"], "OpenAIReplanProvider")
                 self.assertTrue(status["configured"])
+                sft_status = state.sft_service.training_backend_status()
+                self.assertEqual(sft_status["backend_name"], "hf_lora_qlora_v1")
+                self.assertTrue(sft_status["script_exists"])
+                self.assertIn("missing_dependencies", sft_status)
+                self.assertEqual(
+                    sft_status["configured"],
+                    sft_status["script_exists"] and not sft_status["missing_dependencies"],
+                )
                 self.assertEqual(status["base_url"], "https://example.invalid/v1")
                 eval_status = state.evaluation_service.provider_status()
                 self.assertEqual(eval_status["ragas"]["evaluator_name"], "openai_ragas_proxy_v1")
@@ -372,6 +382,43 @@ class APITests(unittest.TestCase):
                     os.environ.pop(key, None)
                 else:
                     os.environ[key] = value
+
+
+class _StubTrainingBackend:
+    backend_name = "hf_lora_qlora_v1"
+
+    def run(self, request):
+        from server.app.sft.training_backend import PolicyTrainingArtifact
+
+        output_dir = Path(request.output_path)
+        adapter_dir = output_dir / "adapter"
+        tokenizer_dir = output_dir / "tokenizer"
+        adapter_dir.mkdir(parents=True, exist_ok=True)
+        tokenizer_dir.mkdir(parents=True, exist_ok=True)
+        (adapter_dir / "adapter_config.json").write_text('{"stub":true}\n', encoding="utf-8")
+        (tokenizer_dir / "tokenizer_config.json").write_text('{"stub":true}\n', encoding="utf-8")
+        summary_path = output_dir / "training_summary.json"
+        summary_path.write_text('{"backend":"stub"}\n', encoding="utf-8")
+        return PolicyTrainingArtifact(
+            backend_name=self.backend_name,
+            schema_version=self.backend_name,
+            adapter_path=str(adapter_dir),
+            tokenizer_path=str(tokenizer_dir),
+            training_summary_path=str(summary_path),
+            metadata={"runner": "stub"},
+        )
+
+    def status(self):
+        return {
+            "backend_name": self.backend_name,
+            "script_path": "/tmp/stub-train-policy-lora.py",
+            "script_exists": True,
+            "configured": True,
+            "missing_dependencies": [],
+            "qlora_supported": True,
+            "required_modules": {},
+            "optional_modules": {"bitsandbytes": True},
+        }
 
     def test_real_profile_can_be_loaded_from_custom_config_directory(self) -> None:
         keys = ("PDA_MODEL_PROFILE", "PDA_MODEL_PROFILE_CONFIG_DIR")
