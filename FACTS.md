@@ -63,6 +63,7 @@
   - deterministic planning
   - clarify loop
   - fake profile 下的 deterministic mock replan
+  - `real` profile 下的 OpenAI-compatible 一次性 replan provider
   - deterministic fallback telemetry
 - Agents 已支持：
   - BJJ coach
@@ -99,9 +100,6 @@
   - 已接入 Next.js app router baseline
   - 但前后端类型仍未自动生成/同步
   - 尚未接入 SSE/streaming 与更完整的页面工作流
-- Orchestrator 的 LLM replan 仍是部分实现：
-  - fake profile 有 deterministic mock replan
-  - `real` profile 仍返回 `provider_unavailable` 并回退 deterministic path
 - Evaluation 仍是部分实现：
   - hard metrics、golden set、frozen replay 已有
   - 但 RAGAS / judge 目前是本地 surrogate / heuristic 实现

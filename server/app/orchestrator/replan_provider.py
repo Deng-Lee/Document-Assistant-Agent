@@ -88,6 +88,10 @@ class OpenAIReplanProvider:
             else None
         )
 
+    @property
+    def is_ready(self) -> bool:
+        return bool(self.api_key and self.transport is not None)
+
     def generate(self, provider_request: ReplanProviderRequest) -> LLMReplanOutput:
         if not self.api_key or self.transport is None:
             raise ReplanProviderUnavailableError("missing_openai_api_key")

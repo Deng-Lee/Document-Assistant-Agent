@@ -49,6 +49,21 @@ Notes:
 - Result:
   - passed
 
+### 2026-03-10: Real Replan Provider Smoke
+- Modules:
+  - `server/app/orchestrator`
+  - `server/app/api`
+  - `server/app/core/openai_chat.py`
+- Goal:
+  - verify a `real` profile app state built from local env credentials wires a ready OpenAI-compatible orchestrator replan provider
+- Coverage:
+  - `.env` loading into app state
+  - `real` runtime config selection
+  - replan provider readiness status
+  - configured `OPENAI_BASE_URL` propagation to the transport
+- Result:
+  - passed
+
 ### 2026-03-07: Core Schema Smoke
 - Modules:
   - `server/app/core`

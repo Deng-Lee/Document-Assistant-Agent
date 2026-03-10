@@ -330,6 +330,7 @@ class APITests(unittest.TestCase):
         try:
             for key in keys:
                 os.environ.pop(key, None)
+            os.environ["PDA_MODEL_PROFILE"] = "fake"
             with TemporaryDirectory() as tmp:
                 Path(tmp, ".env").write_text(
                     "\n".join(
@@ -353,6 +354,11 @@ class APITests(unittest.TestCase):
                 provider = state.orchestrator_service.replanner.provider
                 self.assertEqual(getattr(provider, "api_key", None), "test-local-key")
                 self.assertEqual(getattr(getattr(provider, "transport", None), "base_url", None), "https://example.invalid/v1")
+                status = state.orchestrator_service.replanner.provider_status()
+                self.assertEqual(status["profile_name"], "real")
+                self.assertEqual(status["provider_name"], "OpenAIReplanProvider")
+                self.assertTrue(status["configured"])
+                self.assertEqual(status["base_url"], "https://example.invalid/v1")
         finally:
             for key, value in original.items():
                 if value is None:

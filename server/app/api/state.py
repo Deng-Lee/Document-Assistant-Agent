@@ -73,7 +73,8 @@ class AppState(PDABaseModel):
 
 def create_app_state(root_dir: str | Path) -> AppState:
     root = Path(root_dir).resolve()
-    load_local_env(root)
+    # Runtime root-specific .env must win over any repo-root env loaded during earlier imports.
+    load_local_env(root, override=True)
     storage_paths = StoragePaths.from_root(root)
     storage_paths.ensure_directories()
 

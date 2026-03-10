@@ -30,8 +30,13 @@ def main() -> None:
     root_dir = Path(args.root_dir).resolve()
     app = create_app(root_dir)
     if args.check:
+        replan_status = app.state.pda.orchestrator_service.replanner.provider_status()
         print(f"app_check_ok root_dir={root_dir}")
         print(f"routes={len(app.routes)}")
+        print(f"replan_provider_profile={replan_status['profile_name']}")
+        print(f"replan_provider_name={replan_status['provider_name']}")
+        print(f"replan_provider_configured={replan_status['configured']}")
+        print(f"replan_provider_base_url={replan_status['base_url']}")
         return
     uvicorn.run(app, host=args.host, port=args.port)
 

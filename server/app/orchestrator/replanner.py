@@ -43,6 +43,23 @@ class OrchestratorReplanner:
         self.runtime_config = runtime_config
         self.provider = provider or self._default_provider(runtime_config)
 
+    def provider_status(self) -> dict[str, object]:
+        provider_name = self.provider.__class__.__name__ if self.provider is not None else None
+        if self.provider is None:
+            return {
+                "profile_name": self.runtime_config.model_routing.profile_name,
+                "provider_name": provider_name,
+                "configured": False,
+                "base_url": None,
+            }
+        transport = getattr(self.provider, "transport", None)
+        return {
+            "profile_name": self.runtime_config.model_routing.profile_name,
+            "provider_name": provider_name,
+            "configured": bool(getattr(self.provider, "is_ready", False)),
+            "base_url": getattr(transport, "base_url", None),
+        }
+
     def should_invoke(
         self,
         plan_check: PlanCheck,

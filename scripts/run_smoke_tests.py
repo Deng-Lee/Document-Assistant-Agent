@@ -49,6 +49,49 @@ def main() -> None:
         assert route_path.exists(), f"missing frontend path: {route_path}"
     print("frontend_smoke_ok")
 
+    original_profile = os.environ.get("PDA_MODEL_PROFILE")
+    original_api_key = os.environ.get("OPENAI_API_KEY")
+    original_base_url = os.environ.get("OPENAI_BASE_URL")
+    try:
+        with TemporaryDirectory() as tmp_real:
+            real_root = Path(tmp_real)
+            (real_root / ".env").write_text(
+                "\n".join(
+                    [
+                        "PDA_MODEL_PROFILE=real",
+                        "OPENAI_API_KEY=smoke-real-key",
+                        "OPENAI_BASE_URL=https://smoke.example.invalid/v1",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            os.environ.pop("PDA_MODEL_PROFILE", None)
+            os.environ.pop("OPENAI_API_KEY", None)
+            os.environ.pop("OPENAI_BASE_URL", None)
+            from server.app.api.state import create_app_state
+
+            real_state = create_app_state(real_root)
+            replan_status = real_state.orchestrator_service.replanner.provider_status()
+            assert replan_status["profile_name"] == "real"
+            assert replan_status["provider_name"] == "OpenAIReplanProvider"
+            assert replan_status["configured"] is True
+            assert replan_status["base_url"] == "https://smoke.example.invalid/v1"
+            print("real_replan_provider_smoke_ok")
+    finally:
+        if original_profile is None:
+            os.environ.pop("PDA_MODEL_PROFILE", None)
+        else:
+            os.environ["PDA_MODEL_PROFILE"] = original_profile
+        if original_api_key is None:
+            os.environ.pop("OPENAI_API_KEY", None)
+        else:
+            os.environ["OPENAI_API_KEY"] = original_api_key
+        if original_base_url is None:
+            os.environ.pop("OPENAI_BASE_URL", None)
+        else:
+            os.environ["OPENAI_BASE_URL"] = original_base_url
+
     from server.app.core import (
         ClarifyDirective,
         ClarifySlot,

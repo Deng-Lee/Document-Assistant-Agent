@@ -15,7 +15,7 @@
 | Storage Adapters | `done` | SQLite、FTS5、filestore、trace store、jobs、profiles、真实 Chroma 已接通 | 无关键断裂点 |
 | Ingestion + safe_summary | `done` | text/file/dir/record ingest 与 safe_summary job 已可运行 | 无关键断裂点 |
 | Retrieval + Evidence Pack | `done` | structured + BM25 + dense + RRF + Evidence Pack 已接通 | 无关键断裂点 |
-| Orchestrator | `partial` | probe、plan_check、clarify、mock replan、fallback telemetry 已有 | `real` profile 下的真实一次性 LLM replan provider 未闭环 |
+| Orchestrator | `done` | probe、plan_check、clarify、fake mock replan、real-profile OpenAI-compatible replan provider、fallback telemetry 已接通 | 无关键断裂点 |
 | Agents | `done` | BJJ coach、literary、validator-safe path 已可运行 | 无关键断裂点 |
 | Observability + Replay | `done` | minimal/debug capture、trace detail、frozen replay 已接通 | 无关键断裂点 |
 | Evaluation | `partial` | golden set、frozen replay、hard metrics、partial-result flow 已接通 | RAGAS/judge 仍是 surrogate/heuristic；manual rubric 未接入 |
@@ -27,10 +27,9 @@
 
 ## Highest-Priority Remaining Work
 
-1. 补上 `real` profile 下的真实 Orchestrator LLM replan provider。
-2. 把 Evaluation 的 surrogate RAGAS / heuristic judge 升级为真实外部评测器。
-3. 把 SFT 的 `local_policy_memory_v1` 升级为真实 LoRA/QLoRA 训练闭环。
-4. 补前后端类型自动同步、SSE/streaming 和浏览器级端到端回归。
+1. 把 Evaluation 的 surrogate RAGAS / heuristic judge 升级为真实外部评测器。
+2. 把 SFT 的 `local_policy_memory_v1` 升级为真实 LoRA/QLoRA 训练闭环。
+3. 补前后端类型自动同步、SSE/streaming 和浏览器级端到端回归。
 
 ## Notes
 
