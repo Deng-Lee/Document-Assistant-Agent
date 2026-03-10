@@ -73,9 +73,57 @@ class EvaluationAndSFTTests(unittest.TestCase):
             self.assertEqual(result.run_status.value, "completed")
             self.assertEqual(result.ragas.status.value, "skipped")
             self.assertEqual(result.judge.status.value, "skipped")
+            self.assertEqual(result.manual_rubric.status.value, "skipped")
+            self.assertEqual(result.manual_rubric.reason, "not_reviewed")
             self.assertEqual(result.golden_case_count, 2)
             self.assertEqual(len(eval_repo.list_golden_cases()), 2)
             self.assertTrue(eval_repo.list_eval_runs())
+
+    def test_evaluation_manual_rubric_is_stored_and_aggregated(self) -> None:
+        with TemporaryDirectory() as tmp:
+            trace_store, eval_repo = _build_eval_stack(tmp)
+            trace_store.write_trace(make_trace_record(trace_id="trace_manual"))
+            _write_golden_set(
+                tmp,
+                "manual_suite",
+                [
+                    {
+                        "case_id": "case_manual",
+                        "query": "turtle escape",
+                        "domain": "BJJ",
+                        "trace_id": "trace_manual",
+                        "expected_behavior": {"required_mode": "FULL"},
+                        "expected_chunk_ids": ["chunk_1"],
+                    }
+                ],
+            )
+
+            from server.app.core import EvalRunRequest, ManualRubricScore
+            from server.app.evaluation import EvaluationService
+
+            service = EvaluationService(trace_store=trace_store, golden_case_repository=eval_repo, repo_root=tmp)
+            result = service.run(EvalRunRequest(eval_set_id="manual_suite"))
+            entry, updated = service.submit_manual_rubric(
+                eval_run_id=result.eval_run_id,
+                trace_id="trace_manual",
+                reviewer="lee",
+                scores=[
+                    ManualRubricScore(dimension="ab_distinctness", score=3),
+                    ManualRubricScore(dimension="drill_executability", score=2),
+                    ManualRubricScore(dimension="caveat_reasonableness", score=3),
+                ],
+                notes="good baseline",
+            )
+
+            self.assertEqual(entry.eval_run_id, result.eval_run_id)
+            self.assertEqual(updated.manual_rubric.status.value, "succeeded")
+            self.assertEqual(updated.manual_rubric.details["reviewed_trace_count"], 1)
+            self.assertEqual(updated.manual_rubric.details["trace_coverage"], 1.0)
+            self.assertEqual(updated.manual_rubric.details["dimension_averages"]["ab_distinctness"], 3.0)
+            self.assertEqual(len(service.list_manual_rubrics(result.eval_run_id)), 1)
+            stored = eval_repo.get_eval_run(result.eval_run_id)
+            self.assertIsNotNone(stored)
+            self.assertEqual(stored.manual_rubric.status.value, "succeeded")
 
     def test_evaluation_real_profile_degrades_judge_failures_to_partial(self) -> None:
         with TemporaryDirectory() as tmp:

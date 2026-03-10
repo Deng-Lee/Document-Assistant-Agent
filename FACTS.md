@@ -79,6 +79,7 @@
   - frozen replay eval
   - hard metrics
   - `real` profile 下的 OpenAI-compatible RAGAS / judge external evaluators
+  - manual rubric storage + API + aggregated eval results
   - partial-result handling
 - SFT 已支持：
   - dataset export
@@ -101,9 +102,6 @@
   - 已接入 Next.js app router baseline
   - 但前后端类型仍未自动生成/同步
   - 尚未接入 SSE/streaming 与更完整的页面工作流
-- Evaluation 仍是部分实现：
-  - hard metrics、golden set、frozen replay 已有
-  - manual rubric 未接入
 - 文档同步仍需持续维护：
   - `FACTS.md` 已更新到当前状态
   - 但仍需配合单独的完成度矩阵文档持续跟踪 done / partial / missing
@@ -123,7 +121,7 @@
 - 该仓库已不再是 greenfield / spec-only 状态。
 - 后端 V1 主链路已基本闭合，接下来的优先事项应聚焦于：
   - 前端工程化补齐（types / SSE / e2e）
-  - Evaluation manual rubric
+  - 文档与前端端到端展示持续补强
 - 变更前应优先参考：
   - `IMPLEMENTATION_PLAN.md`
   - `to_do.md`

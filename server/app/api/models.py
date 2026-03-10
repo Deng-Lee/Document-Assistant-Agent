@@ -5,7 +5,7 @@ from typing import Any
 
 from pydantic import Field
 
-from server.app.core import PDABaseModel, PolicyTrainRequest, RetrievalFilters, SFTExportRequest
+from server.app.core import ManualRubricScore, PDABaseModel, PolicyTrainRequest, RetrievalFilters, SFTExportRequest
 
 
 class ChatTurnRequest(PDABaseModel):
@@ -59,6 +59,14 @@ class EvalRunAPIRequest(PDABaseModel):
     model_variant: str = "base"
     use_frozen_evidence: bool = True
     trace_ids: list[str] = Field(default_factory=list)
+
+
+class EvalRubricSubmitRequest(PDABaseModel):
+    eval_run_id: str
+    trace_id: str
+    reviewer: str
+    scores: list[ManualRubricScore] = Field(default_factory=list)
+    notes: str | None = None
 
 
 class ProfilePatchRequest(PDABaseModel):

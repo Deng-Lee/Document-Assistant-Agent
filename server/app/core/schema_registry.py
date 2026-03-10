@@ -5,7 +5,7 @@ from typing import Any
 from .bjj import BJJValidatorReport, BJJAmbiguousFinalAnswer, BJJFullAnswer, BJJLowEvidenceAnswer
 from .chat import ChatClarifyTurnResponse, ChatFinalTurnResponse, ClarifyRequest, LiteraryFinalAnswer
 from .documents import BJJRecordFields, ChunkRecord, DocVersionRecord, DocumentRecord
-from .evaluation import EvalRunRequest, EvalRunResult, GoldenCase
+from .evaluation import EvalRunRequest, EvalRunResult, GoldenCase, ManualRubricEntry, ManualRubricScore
 from .evidence import EvidencePack, EvidencePackItem
 from .jobs import JobRecord, JobRunResult
 from .profile import ProfileSummary
@@ -41,6 +41,8 @@ SCHEMA_MODELS = {
     "golden_case": GoldenCase,
     "eval_run_request": EvalRunRequest,
     "eval_run_result": EvalRunResult,
+    "manual_rubric_score": ManualRubricScore,
+    "manual_rubric_entry": ManualRubricEntry,
     "profile_summary": ProfileSummary,
     "sft_export_request": SFTExportRequest,
     "sft_export_sample": SFTExportSample,

@@ -217,6 +217,7 @@ class APITests(unittest.TestCase):
 
             eval_results = dump_result(routes["/api/eval/results"]())
             self.assertGreaterEqual(len(eval_results["runs"]), 1)
+            self.assertEqual(eval_results["runs"][0]["manual_rubric"]["reason"], "not_reviewed")
 
             sft_payload = dump_result(routes["/api/sft/export"](SFTExportRequest(trace_filter={})))
             self.assertTrue(sft_payload["export_path"])
@@ -234,6 +235,41 @@ class APITests(unittest.TestCase):
             updated_chat = dump_result(routes["/api/chat/turn"](ChatTurnRequest(user_message="迷宫和镜子还能怎么写？")))
             updated_trace = dump_result(routes["/api/traces/{trace_id}"](updated_chat["trace_id"]))
             self.assertEqual(updated_trace["request_log"]["profile_version_id"], profile_after["profile_version_id"])
+
+    def test_eval_manual_rubric_endpoints_store_and_return_aggregates(self) -> None:
+        with TemporaryDirectory() as tmp:
+            app = create_test_app(tmp)
+            routes = endpoint_map(app)
+
+            from server.app.api.models import EvalRubricSubmitRequest, EvalRunAPIRequest, IngestTextRequest
+
+            routes["/api/ingest/text"](
+                IngestTextRequest(markdown_text=sample_bjj_markdown(), source_path_hint="bjj.md")
+            )
+            trace = make_trace_record(trace_id="trace_manual_api")
+            app.state.pda.trace_store.write_trace(trace)
+            eval_payload = dump_result(routes["/api/eval/run"](EvalRunAPIRequest(eval_set_id="manual_api", trace_ids=["trace_manual_api"])))
+
+            rubric_payload = dump_result(
+                routes["/api/eval/rubric"](
+                    EvalRubricSubmitRequest(
+                        eval_run_id=eval_payload["eval_run_id"],
+                        trace_id="trace_manual_api",
+                        reviewer="lee",
+                        scores=[
+                            {"dimension": "ab_distinctness", "score": 3},
+                            {"dimension": "drill_executability", "score": 2},
+                        ],
+                        notes="manual review",
+                    )
+                )
+            )
+
+            self.assertEqual(rubric_payload["entry"]["reviewer"], "lee")
+            self.assertEqual(rubric_payload["run"]["manual_rubric"]["status"], "succeeded")
+            self.assertEqual(rubric_payload["run"]["manual_rubric"]["details"]["reviewed_trace_count"], 1)
+            listed = dump_result(routes["/api/eval/rubric/{eval_run_id}"](eval_payload["eval_run_id"]))
+            self.assertEqual(len(listed["entries"]), 1)
 
     def test_sft_train_endpoint_activates_policy_and_replay_uses_it(self) -> None:
         with TemporaryDirectory() as tmp:

@@ -10,6 +10,7 @@ from server.app.core import (
     JobRecord,
     JobRunResult,
     LiteraryFinalAnswer,
+    ManualRubricEntry,
     PDABaseModel,
     PolicyCheckpointRecord,
     ProbeStats,
@@ -109,6 +110,15 @@ class EvalRunLaunchResponse(PDABaseModel):
 
 class EvalResultsResponse(PDABaseModel):
     runs: list[EvalRunResult] = Field(default_factory=list)
+
+
+class EvalRubricResponse(PDABaseModel):
+    entry: ManualRubricEntry
+    run: EvalRunResult
+
+
+class EvalRubricEntriesResponse(PDABaseModel):
+    entries: list[ManualRubricEntry] = Field(default_factory=list)
 
 
 class SFTExportResponse(PDABaseModel):

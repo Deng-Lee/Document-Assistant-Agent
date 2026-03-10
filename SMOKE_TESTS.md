@@ -124,6 +124,21 @@ Notes:
 - Result:
   - passed
 
+### 2026-03-10: Evaluation Manual Rubric Smoke
+- Modules:
+  - `server/app/evaluation`
+  - `server/app/api`
+  - `server/app/storage`
+- Goal:
+  - verify manual rubric submissions are persisted and immediately reflected in aggregated eval results
+- Coverage:
+  - `/api/eval/rubric`
+  - `/api/eval/rubric/{eval_run_id}`
+  - eval-run result aggregation with `manual_rubric`
+  - SQLite persistence for rubric entries
+- Result:
+  - passed
+
 ### 2026-03-07: Core Schema Smoke
 - Modules:
   - `server/app/core`

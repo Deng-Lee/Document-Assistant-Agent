@@ -15,6 +15,8 @@ from server.app.core import (
     EvalStageResult,
     EvalStageStatus,
     GoldenCase,
+    ManualRubricEntry,
+    ManualRubricScore,
     ModelVariant,
     RuntimeConfigSnapshot,
     TraceRecord,
@@ -72,6 +74,7 @@ class EvaluationService:
         ragas = self.ragas_runner(golden_cases, traces)
         judge = self.judge_runner(golden_cases, traces)
         metrics.extend(ragas.metrics)
+        manual_rubric = self._build_manual_rubric_stage(entries=[], source_trace_ids=[trace.trace_id for trace in traces])
         run_status = EvalRunStatus.PARTIAL if any(stage.status == EvalStageStatus.FAILED for stage in (ragas, judge)) else EvalRunStatus.COMPLETED
         result = EvalRunResult(
             eval_run_id=_eval_run_id(request.eval_set_id, request.model_variant),
@@ -87,6 +90,7 @@ class EvaluationService:
             cost_summary=cost_summary,
             ragas=ragas,
             judge=judge,
+            manual_rubric=manual_rubric,
         )
         if self.golden_case_repository is not None:
             self.golden_case_repository.record_eval_run(result)
@@ -96,6 +100,49 @@ class EvaluationService:
         if self.golden_case_repository is None:
             return []
         return self.golden_case_repository.list_eval_runs()
+
+    def submit_manual_rubric(
+        self,
+        eval_run_id: str,
+        trace_id: str,
+        reviewer: str,
+        scores: list[ManualRubricScore],
+        notes: str | None = None,
+    ) -> tuple[ManualRubricEntry, EvalRunResult]:
+        if self.golden_case_repository is None:
+            raise ValueError("manual_rubric_storage_unavailable")
+        existing = self.golden_case_repository.get_eval_run(eval_run_id)
+        if existing is None:
+            raise ValueError(f"unknown_eval_run:{eval_run_id}")
+        if trace_id not in existing.source_trace_ids:
+            raise ValueError(f"unknown_eval_trace:{trace_id}")
+        now = datetime.utcnow()
+        rubric_id = _manual_rubric_id(eval_run_id, trace_id, reviewer)
+        previous_entries = {entry.rubric_id: entry for entry in self.golden_case_repository.list_manual_rubrics(eval_run_id)}
+        created_at = previous_entries[rubric_id].created_at if rubric_id in previous_entries else now
+        entry = ManualRubricEntry(
+            rubric_id=rubric_id,
+            eval_run_id=eval_run_id,
+            trace_id=trace_id,
+            reviewer=reviewer,
+            scores=scores,
+            notes=notes,
+            created_at=created_at,
+            updated_at=now,
+        )
+        self.golden_case_repository.upsert_manual_rubric(entry)
+        entries = self.golden_case_repository.list_manual_rubrics(eval_run_id)
+        updated_result = _copy_eval_run(
+            existing,
+            manual_rubric=self._build_manual_rubric_stage(entries, existing.source_trace_ids),
+        )
+        self.golden_case_repository.record_eval_run(updated_result)
+        return entry, updated_result
+
+    def list_manual_rubrics(self, eval_run_id: str) -> list[ManualRubricEntry]:
+        if self.golden_case_repository is None:
+            return []
+        return self.golden_case_repository.list_manual_rubrics(eval_run_id)
 
     def _load_traces(self, trace_ids: list[str] | None = None, golden_cases: list[GoldenCase] | None = None) -> list[TraceRecord]:
         selected_ids = trace_ids or [case.trace_id for case in (golden_cases or []) if case.trace_id] or self.trace_store.list_trace_ids()
@@ -190,10 +237,53 @@ class EvaluationService:
                 sample_count=len(traces),
             )
 
+    @staticmethod
+    def _build_manual_rubric_stage(entries: list[ManualRubricEntry], source_trace_ids: list[str]) -> EvalStageResult:
+        if not entries:
+            return EvalStageResult(
+                status=EvalStageStatus.SKIPPED,
+                evaluator="manual_rubric_v1",
+                reason="not_reviewed",
+                sample_count=0,
+                details={
+                    "reviewed_trace_count": 0,
+                    "trace_coverage": 0.0,
+                    "dimension_averages": {},
+                },
+            )
+        dimension_totals: dict[str, list[int]] = {}
+        for entry in entries:
+            for score in entry.scores:
+                dimension_totals.setdefault(score.dimension, []).append(score.score)
+        dimension_averages = {
+            dimension: round(sum(values) / len(values), 4)
+            for dimension, values in sorted(dimension_totals.items())
+            if values
+        }
+        reviewed_trace_ids = sorted({entry.trace_id for entry in entries})
+        trace_count = len(source_trace_ids)
+        coverage = len(reviewed_trace_ids) / trace_count if trace_count else 0.0
+        return EvalStageResult(
+            status=EvalStageStatus.SUCCEEDED,
+            evaluator="manual_rubric_v1",
+            sample_count=len(entries),
+            details={
+                "reviewed_trace_count": len(reviewed_trace_ids),
+                "trace_coverage": round(coverage, 4),
+                "dimension_averages": dimension_averages,
+                "reviewers": sorted({entry.reviewer for entry in entries}),
+            },
+        )
+
 
 def _eval_run_id(eval_set_id: str, model_variant: ModelVariant) -> str:
     payload = f"{eval_set_id}:{model_variant.value}:{datetime.utcnow().isoformat()}"
     return f"eval_{sha1(payload.encode('utf-8')).hexdigest()[:12]}"
+
+
+def _manual_rubric_id(eval_run_id: str, trace_id: str, reviewer: str) -> str:
+    payload = f"{eval_run_id}:{trace_id}:{reviewer}"
+    return f"rubric_{sha1(payload.encode('utf-8')).hexdigest()[:12]}"
 
 
 def _provider_status(runtime_config: RuntimeConfigSnapshot, evaluator: object) -> dict[str, object]:
@@ -204,3 +294,9 @@ def _provider_status(runtime_config: RuntimeConfigSnapshot, evaluator: object) -
         "configured": bool(getattr(evaluator, "is_ready", False)),
         "base_url": getattr(transport, "base_url", None),
     }
+
+
+def _copy_eval_run(existing: EvalRunResult, **updates) -> EvalRunResult:
+    if hasattr(existing, "model_copy"):
+        return existing.model_copy(update=updates, deep=True)
+    return existing.copy(update=updates, deep=True)

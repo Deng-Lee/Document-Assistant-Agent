@@ -15,6 +15,8 @@ from server.app.core import (
     GoldenCase,
     JobRecord,
     JobStatus,
+    ManualRubricEntry,
+    ManualRubricScore,
     ProfileSummary,
 )
 
@@ -327,6 +329,20 @@ class SQLiteGoldenCaseRepository:
             )
             connection.commit()
 
+    def get_eval_run(self, eval_run_id: str) -> EvalRunResult | None:
+        with self.store.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT result_json
+                FROM eval_runs
+                WHERE eval_run_id = ?
+                """,
+                (eval_run_id,),
+            ).fetchone()
+        if row is None or row["result_json"] is None:
+            return None
+        return EvalRunResult(**parse_json_blob(row["result_json"]))
+
     def list_eval_runs(self) -> list[EvalRunResult]:
         with self.store.connect() as connection:
             rows = connection.execute(
@@ -355,6 +371,52 @@ class SQLiteGoldenCaseRepository:
                 )
             )
         return results
+
+    def upsert_manual_rubric(self, entry: ManualRubricEntry) -> None:
+        with self.store.connect() as connection:
+            connection.execute(
+                """
+                INSERT OR REPLACE INTO eval_rubrics
+                (rubric_id, eval_run_id, trace_id, reviewer, scores_json, notes, created_at, updated_at)
+                VALUES (:rubric_id, :eval_run_id, :trace_id, :reviewer, :scores_json, :notes, :created_at, :updated_at)
+                """,
+                {
+                    "rubric_id": entry.rubric_id,
+                    "eval_run_id": entry.eval_run_id,
+                    "trace_id": entry.trace_id,
+                    "reviewer": entry.reviewer,
+                    "scores_json": model_to_json(entry.scores),
+                    "notes": entry.notes,
+                    "created_at": entry.created_at.isoformat(),
+                    "updated_at": entry.updated_at.isoformat(),
+                },
+            )
+            connection.commit()
+
+    def list_manual_rubrics(self, eval_run_id: str) -> list[ManualRubricEntry]:
+        with self.store.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT rubric_id, eval_run_id, trace_id, reviewer, scores_json, notes, created_at, updated_at
+                FROM eval_rubrics
+                WHERE eval_run_id = ?
+                ORDER BY updated_at DESC, rubric_id ASC
+                """,
+                (eval_run_id,),
+            ).fetchall()
+        return [
+            ManualRubricEntry(
+                rubric_id=row["rubric_id"],
+                eval_run_id=row["eval_run_id"],
+                trace_id=row["trace_id"],
+                reviewer=row["reviewer"],
+                scores=[ManualRubricScore(**item) for item in parse_json_blob(row["scores_json"])],
+                notes=row["notes"],
+                created_at=datetime.fromisoformat(row["created_at"]),
+                updated_at=datetime.fromisoformat(row["updated_at"]),
+            )
+            for row in rows
+        ]
 
 
 def _ensure_column(connection: sqlite3.Connection, table_name: str, column_name: str, column_sql: str) -> None:

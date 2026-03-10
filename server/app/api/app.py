@@ -38,6 +38,7 @@ from .models import (
     BJJRecordRequest,
     ChatTurnRequest,
     EvalRunAPIRequest,
+    EvalRubricSubmitRequest,
     IngestDirRequest,
     IngestFileRequest,
     IngestTextRequest,
@@ -51,6 +52,8 @@ from .models import (
 from .responses import (
     ChatConversationResponse,
     EvalResultsResponse,
+    EvalRubricEntriesResponse,
+    EvalRubricResponse,
     EvalRunLaunchResponse,
     HealthResponse,
     IngestDirectoryResponse,
@@ -477,6 +480,26 @@ def create_app(root_dir: str | Path | None = None) -> FastAPI:
     def get_eval_results() -> EvalResultsResponse:
         state = _state(app)
         return EvalResultsResponse(runs=state.evaluation_service.list_results())
+
+    @app.post("/api/eval/rubric", response_model=EvalRubricResponse)
+    def submit_eval_rubric(request: EvalRubricSubmitRequest) -> EvalRubricResponse:
+        state = _state(app)
+        try:
+            entry, run = state.evaluation_service.submit_manual_rubric(
+                eval_run_id=request.eval_run_id,
+                trace_id=request.trace_id,
+                reviewer=request.reviewer,
+                scores=request.scores,
+                notes=request.notes,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return EvalRubricResponse(entry=entry, run=run)
+
+    @app.get("/api/eval/rubric/{eval_run_id}", response_model=EvalRubricEntriesResponse)
+    def list_eval_rubrics(eval_run_id: str) -> EvalRubricEntriesResponse:
+        state = _state(app)
+        return EvalRubricEntriesResponse(entries=state.evaluation_service.list_manual_rubrics(eval_run_id))
 
     @app.post("/api/sft/export", response_model=SFTExportResponse)
     def export_sft(request: SFTExportRequest) -> SFTExportResponse:

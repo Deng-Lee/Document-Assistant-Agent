@@ -10,6 +10,7 @@ from server.app.core import (
     GoldenCase,
     JobRecord,
     JobStatus,
+    ManualRubricEntry,
     ProfileSummary,
     TraceRecord,
 )
@@ -42,9 +43,15 @@ class GoldenCaseRepository(Protocol):
 
     def list_golden_cases(self) -> list[GoldenCase]: ...
 
+    def get_eval_run(self, eval_run_id: str) -> EvalRunResult | None: ...
+
     def record_eval_run(self, result: EvalRunResult) -> None: ...
 
     def list_eval_runs(self) -> list[EvalRunResult]: ...
+
+    def upsert_manual_rubric(self, entry: ManualRubricEntry) -> None: ...
+
+    def list_manual_rubrics(self, eval_run_id: str) -> list[ManualRubricEntry]: ...
 
 
 class FileStore(Protocol):

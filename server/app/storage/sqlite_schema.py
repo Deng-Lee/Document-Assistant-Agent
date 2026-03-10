@@ -104,6 +104,20 @@ CREATE TABLE IF NOT EXISTS eval_runs (
 """
 
 
+EVAL_RUBRICS_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS eval_rubrics (
+    rubric_id TEXT PRIMARY KEY,
+    eval_run_id TEXT NOT NULL,
+    trace_id TEXT NOT NULL,
+    reviewer TEXT NOT NULL,
+    scores_json TEXT NOT NULL,
+    notes TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+"""
+
+
 PROFILES_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS profiles (
     profile_version_id TEXT PRIMARY KEY,
@@ -134,6 +148,7 @@ ALL_SQLITE_STATEMENTS = [
     TRACES_TABLE_SQL,
     GOLDEN_CASES_TABLE_SQL,
     EVAL_RUNS_TABLE_SQL,
+    EVAL_RUBRICS_TABLE_SQL,
     PROFILES_TABLE_SQL,
     JOBS_TABLE_SQL,
 ]

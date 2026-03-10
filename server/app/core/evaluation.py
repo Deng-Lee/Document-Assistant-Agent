@@ -52,6 +52,23 @@ class EvalStageResult(PDABaseModel):
     details: dict[str, Any] = Field(default_factory=dict)
 
 
+class ManualRubricScore(PDABaseModel):
+    dimension: str
+    score: int = Field(ge=1, le=3)
+    note: str | None = None
+
+
+class ManualRubricEntry(PDABaseModel):
+    rubric_id: str
+    eval_run_id: str
+    trace_id: str
+    reviewer: str
+    scores: list[ManualRubricScore] = Field(default_factory=list)
+    notes: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
 class EvalRunResult(PDABaseModel):
     eval_run_id: str
     eval_set_id: str
@@ -66,3 +83,4 @@ class EvalRunResult(PDABaseModel):
     cost_summary: EvalSummary | None = None
     ragas: EvalStageResult | None = None
     judge: EvalStageResult | None = None
+    manual_rubric: EvalStageResult | None = None

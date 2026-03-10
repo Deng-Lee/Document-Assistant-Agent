@@ -155,6 +155,7 @@ def main() -> None:
     from server.app.api.models import (
         ChatTurnRequest,
         EvalRunAPIRequest,
+        EvalRubricSubmitRequest,
         IngestDirRequest,
         IngestFileRequest,
         IngestTextRequest,
@@ -535,6 +536,24 @@ def main() -> None:
         assert api_eval["eval_run_id"]
         api_eval_results = _to_dict(api_routes["/api/eval/results"]())
         assert api_eval_results["runs"]
+        api_rubric = _to_dict(
+            api_routes["/api/eval/rubric"](
+                EvalRubricSubmitRequest(
+                    eval_run_id=api_eval["eval_run_id"],
+                    trace_id=api_chat["trace_id"],
+                    reviewer="smoke",
+                    scores=[
+                        {"dimension": "ab_distinctness", "score": 3},
+                        {"dimension": "drill_executability", "score": 2},
+                    ],
+                    notes="smoke rubric",
+                )
+            )
+        )
+        assert api_rubric["run"]["manual_rubric"]["status"] == "succeeded"
+        api_rubric_entries = _to_dict(api_routes["/api/eval/rubric/{eval_run_id}"](api_eval["eval_run_id"]))
+        assert api_rubric_entries["entries"]
+        print("evaluation_manual_rubric_smoke_ok")
         api_sft = _to_dict(api_routes["/api/sft/export"](SFTExportRequest(trace_filter={})))
         assert api_sft["manifest"]["sample_count"] >= 1
         api_sft_dir = Path(api_sft["export_path"])

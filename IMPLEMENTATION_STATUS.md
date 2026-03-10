@@ -18,7 +18,7 @@
 | Orchestrator | `done` | probe、plan_check、clarify、fake mock replan、real-profile OpenAI-compatible replan provider、fallback telemetry 已接通 | 无关键断裂点 |
 | Agents | `done` | BJJ coach、literary、validator-safe path 已可运行 | 无关键断裂点 |
 | Observability + Replay | `done` | minimal/debug capture、trace detail、frozen replay 已接通 | 无关键断裂点 |
-| Evaluation | `partial` | golden set、frozen replay、hard metrics、OpenAI-compatible external RAGAS/judge、partial-result flow 已接通 | manual rubric 未接入 |
+| Evaluation | `done` | golden set、frozen replay、hard metrics、OpenAI-compatible external RAGAS/judge、manual rubric、partial-result flow 已接通 | 无关键断裂点 |
 | SFT | `done` | dataset export、真实 HF LoRA/QLoRA 训练 runner、policy artifact 注册、adapter-backed policy replay/eval 已接通 | 无关键断裂点 |
 | API | `done` | ingest/chat/retrieve/traces/replay/eval/sft/profile API 已有 | 无关键断裂点 |
 | Profile Persistence | `done` | SQLite 持久化、启动恢复、history API 已接通 | 无关键断裂点 |
@@ -28,7 +28,6 @@
 ## Highest-Priority Remaining Work
 
 1. 补前后端类型自动同步、SSE/streaming 和浏览器级端到端回归。
-2. 为 Evaluation 接入 manual rubric。
 
 ## Notes
 

@@ -32,7 +32,17 @@ from .documents import (
 from .embeddings import DEFAULT_EMBEDDING_DIMENSION, build_text_embedding, cosine_similarity
 from .enums import *
 from .errors import APIErrorDetail, ErrorCode
-from .evaluation import EvalFailure, EvalMetricValue, EvalRunRequest, EvalRunResult, EvalStageResult, EvalSummary, GoldenCase
+from .evaluation import (
+    EvalFailure,
+    EvalMetricValue,
+    EvalRunRequest,
+    EvalRunResult,
+    EvalStageResult,
+    EvalSummary,
+    GoldenCase,
+    ManualRubricEntry,
+    ManualRubricScore,
+)
 from .evidence import EvidencePack, EvidencePackItem, RankSignals
 from .jobs import JobRecord, JobRunResult
 from .locators import CharRange, LineRange, LocatorIndex, SourceLocator
@@ -112,6 +122,8 @@ __all__ = [
     "GenerationLog",
     "GenerationInputSnapshot",
     "GoldenCase",
+    "ManualRubricEntry",
+    "ManualRubricScore",
     "DrillStart",
     "JobRecord",
     "JobRunResult",
