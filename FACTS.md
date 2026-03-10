@@ -86,7 +86,7 @@
   - policy replay/eval wiring
 - API 与本地 UI 已支持：
   - FastAPI endpoints
-  - 静态 web shell
+  - Next.js frontend baseline
   - health / ingest / chat / traces / replay / eval / sft / profile flows
 - Tests 与 smoke 已存在：
   - `server/tests/`
@@ -94,10 +94,10 @@
   - `scripts/run_test_suite.py`
 
 ## Remaining Relative To V1 Spec
-- 前端尚未达到 `DEV_SPEC.md` 目标形态：
-  - 当前 `web/` 是静态 shell
-  - 尚未接入 Next.js app
-  - 尚无 `package.json`、前端构建链、类型同步与页面级路由
+- 前端仍有工程化缺口：
+  - 已接入 Next.js app router baseline
+  - 但前后端类型仍未自动生成/同步
+  - 尚未接入 SSE/streaming 与更完整的页面工作流
 - Orchestrator 的 LLM replan 仍是部分实现：
   - fake profile 有 deterministic mock replan
   - `real` profile 仍返回 `provider_unavailable` 并回退 deterministic path
@@ -114,8 +114,8 @@
 
 ## Runtime Constraints Discovered
 - Python 运行环境可用，`chromadb` 当前环境中可导入并用于本地 persistent store。
-- 当前仓库已有 Python 依赖声明，但仍没有 Node.js 依赖清单或版本 pin。
-- `web/` 当前不是 Next.js 工程，因此还没有前端构建与运行时分离配置。
+- 当前仓库已有 Python 与 Node.js 依赖清单，前端依赖已通过 `web/package-lock.json` 锁定。
+- `web/` 已切到 Next.js 工程，前端通过 rewrite 对接 FastAPI API。
 - Chroma 在当前环境下可工作，但其上游依赖会抛出非阻塞性 warning：
   - `read_write_lock.py` 的 `notifyAll()` deprecation warning
 - 为兼容 `numpy 2.x`，向量适配层里保留了 `np.NaN` 兼容补丁。
@@ -127,7 +127,6 @@
 ## Planning Implication
 - 该仓库已不再是 greenfield / spec-only 状态。
 - 后端 V1 主链路已基本闭合，接下来的优先事项应聚焦于：
-  - Next.js frontend 接入
   - `real` profile 下的真实 replan provider
   - Evaluation 外部评测器接入
   - 真实训练 backend 接入

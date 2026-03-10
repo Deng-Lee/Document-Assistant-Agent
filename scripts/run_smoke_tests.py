@@ -27,6 +27,28 @@ def main() -> None:
     if str(repo_root) not in sys.path:
         sys.path.insert(0, str(repo_root))
 
+    frontend_package = repo_root / "web" / "package.json"
+    frontend_config = repo_root / "web" / "next.config.mjs"
+    frontend_routes = [
+        repo_root / "web" / "app" / "layout.js",
+        repo_root / "web" / "app" / "page.js",
+        repo_root / "web" / "app" / "chat" / "page.js",
+        repo_root / "web" / "app" / "traces" / "page.js",
+        repo_root / "web" / "app" / "evaluation" / "page.js",
+        repo_root / "web" / "components" / "dashboard-client.jsx",
+        repo_root / "web" / "components" / "chat-client.jsx",
+        repo_root / "web" / "components" / "traces-client.jsx",
+        repo_root / "web" / "components" / "evaluation-client.jsx",
+        repo_root / "web" / "lib" / "api.js",
+    ]
+    package_payload = json.loads(frontend_package.read_text(encoding="utf-8"))
+    assert package_payload["dependencies"]["next"]
+    assert package_payload["scripts"]["build"] == "next build"
+    assert frontend_config.exists()
+    for route_path in frontend_routes:
+        assert route_path.exists(), f"missing frontend path: {route_path}"
+    print("frontend_smoke_ok")
+
     from server.app.core import (
         ClarifyDirective,
         ClarifySlot,
@@ -384,13 +406,11 @@ def main() -> None:
                     api_routes[f"{method} {path}"] = route.endpoint
         health_payload = _to_dict(api_routes["/api/health"]())
         assert health_payload["status"] == "ok"
-        ui_shell = api_routes["/"]()
-        assert Path(ui_shell.path).name == "index.html"
-        assert Path(ui_shell.path).exists()
-        assert (Path(ui_shell.path).with_name("app.js")).exists()
-        assert (Path(ui_shell.path).with_name("styles.css")).exists()
-        assert (repo_root / "web" / "lib" / "api.js").exists()
-        assert (repo_root / "web" / "components" / "renderers.js").exists()
+        landing = api_routes["/"]()
+        landing_body = landing.body.decode("utf-8")
+        assert "Backend API is running" in landing_body
+        assert "npm --prefix web run dev" in landing_body
+        assert "web/package.json" in landing_body
 
         api_ingest = _to_dict(
             api_routes["/api/ingest/text"](

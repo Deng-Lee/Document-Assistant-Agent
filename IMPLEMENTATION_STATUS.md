@@ -22,15 +22,15 @@
 | SFT | `partial` | dataset export、train rows、policy artifact、registry/replay/eval wiring 已接通 | 训练 backend 仍是 `local_policy_memory_v1`，不是真实 LoRA/QLoRA |
 | API | `done` | ingest/chat/retrieve/traces/replay/eval/sft/profile API 已有 | 无关键断裂点 |
 | Profile Persistence | `done` | SQLite 持久化、启动恢复、history API 已接通 | 无关键断裂点 |
-| Web Frontend | `partial` | 当前有 FastAPI 挂载的静态 shell | Next.js 前端尚未接入 |
+| Web Frontend | `partial` | Next.js App Router 前端已接入，覆盖 dashboard/chat/traces/evaluation 基线 | 前后端类型自动同步、SSE/streaming 与更完整页面工作流仍未接入 |
 | Canonical Docs | `partial` | `FACTS.md` 已与当前仓库重新对齐 | 后续每轮实现仍需持续同步状态文档 |
 
 ## Highest-Priority Remaining Work
 
-1. 接入 Next.js 前端，替换当前静态 shell 作为正式前端形态。
-2. 补上 `real` profile 下的真实 Orchestrator LLM replan provider。
-3. 把 Evaluation 的 surrogate RAGAS / heuristic judge 升级为真实外部评测器。
-4. 把 SFT 的 `local_policy_memory_v1` 升级为真实 LoRA/QLoRA 训练闭环。
+1. 补上 `real` profile 下的真实 Orchestrator LLM replan provider。
+2. 把 Evaluation 的 surrogate RAGAS / heuristic judge 升级为真实外部评测器。
+3. 把 SFT 的 `local_policy_memory_v1` 升级为真实 LoRA/QLoRA 训练闭环。
+4. 补前后端类型自动同步与流式前端交互。
 
 ## Notes
 

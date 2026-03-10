@@ -5,8 +5,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse
 
 from server.app.agents.bjj_coach.types import BJJCoachInput
 from server.app.core import (
@@ -77,12 +76,10 @@ def create_app(root_dir: str | Path | None = None) -> FastAPI:
     resolved_root = Path(root_dir or Path.cwd()).resolve()
     app = FastAPI(title="Personal Document Assistant API", version="0.1.0")
     app.state.pda = create_app_state(resolved_root)
-    ui_root = _repo_root() / "web"
-    app.mount("/ui", StaticFiles(directory=ui_root), name="ui")
 
     @app.get("/", include_in_schema=False)
-    def web_shell() -> FileResponse:
-        return FileResponse(ui_root / "app" / "index.html")
+    def backend_landing() -> HTMLResponse:
+        return HTMLResponse(_backend_landing_page())
 
     @app.get("/api/health", response_model=HealthResponse)
     def health() -> HealthResponse:
@@ -603,3 +600,80 @@ def _resolve_input_path(root_dir: str | Path, raw_path: str, must_be_dir: bool) 
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[3]
+
+
+def _backend_landing_page() -> str:
+    frontend_root = _repo_root() / "web"
+    package_exists = (frontend_root / "package.json").exists()
+    next_hint = "ready" if package_exists else "missing"
+    return f"""<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Personal Document Assistant Backend</title>
+    <style>
+      :root {{
+        color-scheme: light;
+        --ink: #0f172a;
+        --muted: #475569;
+        --stroke: rgba(15, 23, 42, 0.12);
+        --accent: #c2410c;
+        --bg: linear-gradient(135deg, #f8fafc 0%, #fef3c7 55%, #fed7aa 100%);
+      }}
+      * {{ box-sizing: border-box; }}
+      body {{
+        margin: 0;
+        min-height: 100vh;
+        font-family: "Avenir Next", "Segoe UI", sans-serif;
+        background: var(--bg);
+        color: var(--ink);
+        display: grid;
+        place-items: center;
+        padding: 24px;
+      }}
+      main {{
+        width: min(760px, 100%);
+        background: rgba(255, 250, 242, 0.92);
+        border: 1px solid var(--stroke);
+        border-radius: 28px;
+        padding: 32px;
+        box-shadow: 0 24px 90px rgba(15, 23, 42, 0.12);
+      }}
+      h1 {{
+        margin: 0 0 12px;
+        font-size: clamp(2rem, 4vw, 3rem);
+        font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+      }}
+      p {{ color: var(--muted); line-height: 1.6; }}
+      code {{
+        background: rgba(15, 23, 42, 0.08);
+        border-radius: 999px;
+        padding: 0.2rem 0.55rem;
+        font-family: "SFMono-Regular", Consolas, monospace;
+      }}
+      ul {{ padding-left: 1.15rem; }}
+      a {{ color: var(--accent); }}
+    </style>
+  </head>
+  <body>
+    <main>
+      <p>Personal Document Assistant</p>
+      <h1>Backend API is running.</h1>
+      <p>
+        The repository frontend now lives in the Next.js app under <code>web/</code>.
+        Frontend scaffold status: <code>{next_hint}</code>.
+      </p>
+      <p>
+        Start the backend with <code>python3 -m server.app.api</code>, then start the frontend with
+        <code>npm --prefix web run dev</code>.
+      </p>
+      <ul>
+        <li>Health check: <a href="/api/health">/api/health</a></li>
+        <li>Frontend package: <code>web/package.json</code></li>
+        <li>Backend repo root: <code>{_repo_root()}</code></li>
+      </ul>
+    </main>
+  </body>
+</html>
+"""

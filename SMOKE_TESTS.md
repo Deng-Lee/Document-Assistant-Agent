@@ -33,6 +33,22 @@ Notes:
 
 ## Smoke Test Inventory
 
+### 2026-03-09: Frontend Scaffold Smoke
+- Modules:
+  - `web/app`
+  - `web/components`
+  - `web/lib`
+- Goal:
+  - verify the repository now contains a Next.js frontend baseline instead of the legacy static shell
+- Coverage:
+  - `web/package.json`
+  - `next.config.mjs`
+  - app-router pages for dashboard/chat/traces/evaluation
+  - shared client components
+  - frontend API client
+- Result:
+  - passed
+
 ### 2026-03-07: Core Schema Smoke
 - Modules:
   - `server/app/core`
@@ -141,10 +157,8 @@ Notes:
   - `server/app/orchestrator`
   - `server/app/retrieval`
   - `server/app/ingestion`
-  - `web/app`
-  - `web/lib`
 - Goal:
-  - verify the API layer is wired to the repository services, stateful chat path, and local web shell
+  - verify the API layer is wired to the repository services, stateful chat path, and backend landing route
 - Coverage:
   - app creation and route registration
   - `/`
