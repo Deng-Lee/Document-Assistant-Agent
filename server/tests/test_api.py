@@ -240,9 +240,11 @@ class APITests(unittest.TestCase):
             app = create_test_app(tmp)
             routes = endpoint_map(app)
             app.state.pda.sft_service.training_backend = _StubTrainingBackend()
+            inference_backend = _StubInferenceBackend()
+            app.state.pda.sft_service.inference_backend = inference_backend
 
             from server.app.api.models import ReplayRequest, SFTTrainAPIRequest
-            from server.app.core import SFTExportRequest
+            from server.app.core import SFTExportRequest, SFTExportSample
             from server.app.observability import build_generation_input_snapshot, build_prompt_snapshot
             from server.app.core import ProfileSummary
 
@@ -263,30 +265,16 @@ class APITests(unittest.TestCase):
             export_payload = dump_result(routes["/api/sft/export"](SFTExportRequest(trace_filter={})))
             export_dir = Path(export_payload["export_path"])
             exported = [json.loads(line) for line in (export_dir / "dataset_export.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
-            rows = []
-            for sample in exported:
-                target_output = dict(sample["baseline_output"])
+            samples = [SFTExportSample(**sample) for sample in exported]
+            for sample in samples:
+                target_output = json.loads(json.dumps(sample.baseline_output))
                 target_output["observations"][0]["text"] = "api policy tuned observation"
-                rows.append(
-                    {
-                        "trace_id": sample["trace_id"],
-                        "input": {
-                            "task": sample["profile_summary"].get("task"),
-                            "query_original": sample["profile_summary"].get("query_original", ""),
-                            "query_clean": sample["profile_summary"].get("query_clean", ""),
-                            "confirmed_slots": sample["confirmed_slots"],
-                            "coach_pending_slot": sample["profile_summary"].get("coach_pending_slot"),
-                            "profile_summary": sample["profile_summary"],
-                            "gate_decision": sample["gate_decision"],
-                            "coach_clarify_round": sample["coach_clarify_round"],
-                            "allowed_evidence_ids": sample["allowed_evidence_ids"],
-                            "evidence_pack_selected": sample["evidence_pack_selected"],
-                        },
-                        "target_output": target_output,
-                    }
-                )
-            train_path = export_dir / "train.jsonl"
-            train_path.write_text("\n".join(json.dumps(row, ensure_ascii=False) for row in rows) + "\n", encoding="utf-8")
+                sample.target_output = target_output
+            train_path = app.state.pda.sft_service.build_train_rows(
+                samples,
+                export_dir / "train.jsonl",
+                prefer_target_output=True,
+            )
 
             train_payload = dump_result(
                 routes["/api/sft/train"](
@@ -307,6 +295,7 @@ class APITests(unittest.TestCase):
                 routes["/api/replay/{trace_id}"]("trace_policy_api", ReplayRequest(model_variant="policy"))
             )
             self.assertIn("api policy tuned observation", json.dumps(replay_payload["final_answer"], ensure_ascii=False))
+            self.assertGreaterEqual(len(inference_backend.calls), 1)
 
     def test_profile_persistence_survives_app_restart_and_keeps_history(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -368,6 +357,9 @@ class APITests(unittest.TestCase):
                     sft_status["configured"],
                     sft_status["script_exists"] and not sft_status["missing_dependencies"],
                 )
+                sft_inference_status = state.sft_service.inference_backend_status()
+                self.assertEqual(sft_inference_status["backend_name"], "hf_lora_qlora_inference_v1")
+                self.assertIn("missing_dependencies", sft_inference_status)
                 self.assertEqual(status["base_url"], "https://example.invalid/v1")
                 eval_status = state.evaluation_service.provider_status()
                 self.assertEqual(eval_status["ragas"]["evaluator_name"], "openai_ragas_proxy_v1")
@@ -418,6 +410,35 @@ class _StubTrainingBackend:
             "qlora_supported": True,
             "required_modules": {},
             "optional_modules": {"bitsandbytes": True},
+        }
+
+
+class _StubInferenceBackend:
+    backend_name = "hf_lora_qlora_inference_v1"
+
+    def __init__(self):
+        self.calls = []
+
+    def generate(self, artifact, input_payload, max_new_tokens=1024):
+        import hashlib
+
+        from server.app.sft.inference_backend import PolicyInferenceResult
+
+        self.calls.append({"task": input_payload.get("task"), "max_new_tokens": max_new_tokens})
+        signature = hashlib.sha1(json.dumps(input_payload, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
+        learned = artifact["examples"][signature]
+        return PolicyInferenceResult(
+            output=learned["target_output"],
+            token_usage={"prompt_tokens": 10, "completion_tokens": 20},
+            metadata={"runner": "stub_inference"},
+        )
+
+    def status(self):
+        return {
+            "backend_name": self.backend_name,
+            "configured": True,
+            "missing_dependencies": [],
+            "required_modules": {},
         }
 
     def test_real_profile_can_be_loaded_from_custom_config_directory(self) -> None:

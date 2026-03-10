@@ -94,6 +94,19 @@ Notes:
 - Result:
   - passed
 
+### 2026-03-10: Real SFT Inference Backend Readiness Smoke
+- Modules:
+  - `server/app/sft`
+  - `server/app/api`
+- Goal:
+  - verify a `real` profile app state exposes the adapter-backed policy inference backend and surfaces dependency-readiness metadata
+- Coverage:
+  - SFT inference backend selection
+  - readiness status for `torch` / `transformers` / `peft`
+  - startup check visibility for policy inference runtime
+- Result:
+  - passed
+
 ### 2026-03-10: SFT Artifact Wiring Smoke
 - Modules:
   - `server/app/sft`
@@ -104,6 +117,7 @@ Notes:
   - dataset export
   - train row build
   - stubbed training backend artifact generation
+  - stubbed adapter inference backend generation
   - registry activation
   - policy replay
   - policy eval replay

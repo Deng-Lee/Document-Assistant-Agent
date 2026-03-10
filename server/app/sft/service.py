@@ -28,6 +28,8 @@ from server.app.agents.bjj_coach.types import BJJCoachInput
 from server.app.agents.bjj_coach.validator import validate_bjj_answer
 from server.app.observability import TraceRecorder, build_generation_input_snapshot, build_prompt_snapshot
 from server.app.storage import TraceStore
+from .inference_backend import HFLoRAQLoRAInferenceBackend, PolicyInferenceBackend, PolicyInferenceBackendError
+from .prompting import build_policy_input_payload, evidence_pack_from_items
 from .training_backend import HFLoRAQLoRATrainingBackend, PolicyTrainingBackend
 
 
@@ -37,15 +39,20 @@ class SFTService:
         trace_store: TraceStore,
         policy_root: str | Path | None = None,
         training_backend: PolicyTrainingBackend | None = None,
+        inference_backend: PolicyInferenceBackend | None = None,
     ):
         self.trace_store = trace_store
         self.policy_root = Path(policy_root).resolve() if policy_root is not None else None
         self.training_backend = training_backend or HFLoRAQLoRATrainingBackend()
+        self.inference_backend = inference_backend or HFLoRAQLoRAInferenceBackend()
         if self.policy_root is not None:
             self.policy_root.mkdir(parents=True, exist_ok=True)
 
     def training_backend_status(self) -> dict[str, object]:
         return self.training_backend.status()
+
+    def inference_backend_status(self) -> dict[str, object]:
+        return self.inference_backend.status()
 
     def export_dataset(
         self,
@@ -89,12 +96,14 @@ class SFTService:
                         "query_original": sample.profile_summary.get("query_original", ""),
                         "query_clean": sample.profile_summary.get("query_clean", ""),
                         "confirmed_slots": sample.confirmed_slots,
-                        "coach_pending_slot": sample.profile_summary.get("coach_pending_slot"),
-                        "profile_summary": sample.profile_summary,
-                        "gate_decision": sample.gate_decision,
                         "coach_clarify_round": sample.coach_clarify_round,
-                        "allowed_evidence_ids": sample.allowed_evidence_ids,
-                        "evidence_pack_selected": [_to_jsonable(item) for item in sample.evidence_pack_selected],
+                        "coach_pending_slot": sample.profile_summary.get("coach_pending_slot"),
+                        "profile_version_id": sample.profile_summary.get("profile_version_id"),
+                        "profile_summary_snapshot": _profile_snapshot_payload(sample.profile_summary),
+                        "frozen_evidence_pack": evidence_pack_from_items(sample.evidence_pack_selected),
+                        "prompt_version": sample.prompt_version,
+                        "prompt_hash": sample.prompt_hash,
+                        "baseline_output": sample.baseline_output,
                     },
                     "target_output": target_output,
                 }
@@ -278,6 +287,9 @@ class SFTService:
         input_snapshot: GenerationInputSnapshot,
         baseline_output: dict[str, Any],
         runtime_config: RuntimeConfigSnapshot | None = None,
+        prompt_version: str | None = None,
+        prompt_hash: str | None = None,
+        policy_input_output: dict[str, Any] | None = None,
     ) -> tuple[dict[str, Any], str]:
         resolved_model = self.resolve_model_for_variant(runtime_config, variant)
         if variant != ModelVariant.POLICY:
@@ -285,14 +297,31 @@ class SFTService:
         artifact = self.load_policy_artifact(resolved_model)
         if artifact is None:
             return baseline_output, resolved_model
-        signature = self._signature_from_input_snapshot(input_snapshot)
-        learned = artifact.get("examples", {}).get(signature)
-        if learned is None:
-            return baseline_output, resolved_model
-        output = learned.get("target_output")
-        if not isinstance(output, dict) or not output:
-            return baseline_output, resolved_model
-        return output, resolved_model
+        input_payload = build_policy_input_payload(
+            input_snapshot=input_snapshot,
+            baseline_output=policy_input_output or baseline_output,
+            prompt_version=prompt_version,
+            prompt_hash=prompt_hash,
+        )
+        try:
+            generation_limits = runtime_config.generation if runtime_config is not None else None
+            task_key = "literary" if input_snapshot.task == "COACH_LITERARY" else "bjj"
+            max_new_tokens = int(generation_limits.__getattribute__(task_key).get("max_tokens", 1024)) if generation_limits is not None else 1024
+            result = self.inference_backend.generate(
+                artifact=artifact,
+                input_payload=input_payload,
+                max_new_tokens=max_new_tokens,
+            )
+            return result.output, resolved_model
+        except PolicyInferenceBackendError:
+            signature = self._signature_from_policy_input(input_payload)
+            learned = artifact.get("examples", {}).get(signature)
+            if learned is None:
+                return baseline_output, resolved_model
+            output = learned.get("target_output")
+            if not isinstance(output, dict) or not output:
+                return baseline_output, resolved_model
+            return output, resolved_model
 
     def replay_trace(
         self,
@@ -338,6 +367,9 @@ class SFTService:
                 input_snapshot,
                 baseline_output,
                 runtime_config=config,
+                prompt_version=source_trace.generation_log.prompt_version,
+                prompt_hash=source_trace.generation_log.prompt_hash,
+                policy_input_output=source_trace.generation_log.output or baseline_output,
             )
             final_answer = _coerce_bjj_answer(final_output)
             validator_report = validate_bjj_answer(final_answer, {item.evidence_id for item in replay_evidence.items})
@@ -348,6 +380,9 @@ class SFTService:
                 input_snapshot,
                 _to_jsonable(final_answer),
                 runtime_config=config,
+                prompt_version=source_trace.generation_log.prompt_version,
+                prompt_hash=source_trace.generation_log.prompt_hash,
+                policy_input_output=source_trace.generation_log.output or _to_jsonable(final_answer),
             )
             final_answer = _coerce_literary_answer(final_output)
             validator_report = None
@@ -455,6 +490,8 @@ class SFTService:
         return SFTExportSample(
             trace_id=trace.trace_id,
             runtime_config_snapshot=trace.runtime_config_snapshot,
+            prompt_version=trace.generation_log.prompt_version,
+            prompt_hash=trace.generation_log.prompt_hash,
             gate_decision={
                 "gate_label": reasoning_status.get("gate_label"),
                 "reason_codes": reasoning_status.get("reason_codes", []),
@@ -514,39 +551,20 @@ class SFTService:
 
     @staticmethod
     def _signature_from_train_row(row: dict[str, Any]) -> str:
-        payload = row.get("input", {})
-        return _signature(
-            {
-                "task": payload.get("task"),
-                "query_original": payload.get("query_original", ""),
-                "query_clean": payload.get("query_clean", ""),
-                "confirmed_slots": payload.get("confirmed_slots", {}),
-                "coach_clarify_round": payload.get("coach_clarify_round", 0),
-                "coach_pending_slot": payload.get("coach_pending_slot"),
-                "profile_version_id": payload.get("profile_summary", {}).get("profile_version_id"),
-                "frozen_evidence_ids": [
-                    item.get("evidence_id")
-                    for item in payload.get("evidence_pack_selected", [])
-                    if isinstance(item, dict) and item.get("evidence_id")
-                ]
-                or payload.get("allowed_evidence_ids", []),
-            }
-        )
+        return _signature(row.get("input", {}))
 
     @staticmethod
     def _signature_from_input_snapshot(input_snapshot: GenerationInputSnapshot) -> str:
         return _signature(
-            {
-                "task": input_snapshot.task,
-                "query_original": input_snapshot.query_original,
-                "query_clean": input_snapshot.query_clean,
-                "confirmed_slots": input_snapshot.confirmed_slots,
-                "coach_clarify_round": input_snapshot.coach_clarify_round,
-                "coach_pending_slot": input_snapshot.coach_pending_slot,
-                "profile_version_id": input_snapshot.profile_version_id,
-                "frozen_evidence_ids": [item.evidence_id for item in input_snapshot.frozen_evidence_pack.items],
-            }
+            build_policy_input_payload(
+                input_snapshot=input_snapshot,
+                baseline_output={},
+            )
         )
+
+    @staticmethod
+    def _signature_from_policy_input(input_payload: dict[str, Any]) -> str:
+        return _signature(input_payload)
 
     @staticmethod
     def _dataset_version(output_dir: Path) -> str:
@@ -631,3 +649,13 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
             continue
         rows.append(json.loads(line))
     return rows
+
+
+def _profile_snapshot_payload(profile_summary: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "profile_version_id": profile_summary.get("profile_version_id"),
+        "ruleset_default": profile_summary.get("ruleset_default", "Gi"),
+        "injuries": profile_summary.get("injuries", []),
+        "forbidden_actions": profile_summary.get("forbidden_actions", []),
+        "preferences": profile_summary.get("preferences", []),
+    }

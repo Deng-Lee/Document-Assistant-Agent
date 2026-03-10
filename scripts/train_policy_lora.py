@@ -4,14 +4,14 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import sys
 from typing import Any
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
-SYSTEM_PROMPT = (
-    "You are a Brazilian Jiu-Jitsu (BJJ) coach assistant. "
-    "You output a single valid JSON object following the provided schema. "
-    "You do not ask questions. You must follow allowed_evidence_ids."
-)
+from server.app.sft.prompting import build_policy_prompt
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -27,7 +27,7 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
 def _build_example(row: dict[str, Any]) -> tuple[str, str]:
     if "input" not in row or "target_output" not in row:
         raise ValueError("Each row must contain 'input' and 'target_output'.")
-    prompt = f"{SYSTEM_PROMPT}\n\nINPUT_JSON:\n{json.dumps(row['input'], ensure_ascii=False)}\n\nOUTPUT_JSON:\n"
+    prompt = build_policy_prompt(row["input"])
     assistant = json.dumps(row["target_output"], ensure_ascii=False)
     return prompt, assistant
 

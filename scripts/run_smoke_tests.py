@@ -93,6 +93,10 @@ def main() -> None:
             assert sft_status["script_exists"] is True
             assert sft_status["script_path"].endswith("scripts/train_policy_lora.py")
             print("real_sft_backend_smoke_ok")
+            sft_inference_status = real_state.sft_service.inference_backend_status()
+            assert sft_inference_status["backend_name"] == "hf_lora_qlora_inference_v1"
+            assert "missing_dependencies" in sft_inference_status
+            print("real_sft_inference_backend_smoke_ok")
     finally:
         if original_profile is None:
             os.environ.pop("PDA_MODEL_PROFILE", None)
@@ -549,12 +553,20 @@ def main() -> None:
                         "query_original": sample["profile_summary"].get("query_original", ""),
                         "query_clean": sample["profile_summary"].get("query_clean", ""),
                         "confirmed_slots": sample["confirmed_slots"],
-                        "coach_pending_slot": sample["profile_summary"].get("coach_pending_slot"),
-                        "profile_summary": sample["profile_summary"],
-                        "gate_decision": sample["gate_decision"],
                         "coach_clarify_round": sample["coach_clarify_round"],
-                        "allowed_evidence_ids": sample["allowed_evidence_ids"],
-                        "evidence_pack_selected": sample["evidence_pack_selected"],
+                        "coach_pending_slot": sample["profile_summary"].get("coach_pending_slot"),
+                        "profile_version_id": sample["profile_summary"].get("profile_version_id"),
+                        "profile_summary_snapshot": {
+                            "profile_version_id": sample["profile_summary"].get("profile_version_id"),
+                            "ruleset_default": sample["profile_summary"].get("ruleset_default", "Gi"),
+                            "injuries": sample["profile_summary"].get("injuries", []),
+                            "forbidden_actions": sample["profile_summary"].get("forbidden_actions", []),
+                            "preferences": sample["profile_summary"].get("preferences", []),
+                        },
+                        "frozen_evidence_pack": {"items": sample["evidence_pack_selected"]},
+                        "prompt_version": sample.get("prompt_version"),
+                        "prompt_hash": sample.get("prompt_hash"),
+                        "baseline_output": sample["baseline_output"],
                     },
                     "target_output": target_output,
                 }
@@ -650,6 +662,7 @@ def main() -> None:
             trace_store=trace_store2,
             policy_root=root / "data" / "policies",
             training_backend=_SmokeTrainingBackend(),
+            inference_backend=_SmokeInferenceBackend(),
         )
         dataset_dir = root / "datasets" / "sft" / "v1" / "smoke"
         manifest, samples = sft.export_dataset(
@@ -749,6 +762,34 @@ class _SmokeTrainingBackend:
             "qlora_supported": True,
             "required_modules": {},
             "optional_modules": {"bitsandbytes": True},
+        }
+
+
+class _SmokeInferenceBackend:
+    backend_name = "hf_lora_qlora_inference_v1"
+
+    def run_signature(self, input_payload):
+        import hashlib
+
+        return hashlib.sha1(json.dumps(input_payload, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
+
+    def generate(self, artifact, input_payload, max_new_tokens=1024):
+        from server.app.sft.inference_backend import PolicyInferenceResult
+
+        signature = self.run_signature(input_payload)
+        learned = artifact["examples"][signature]
+        return PolicyInferenceResult(
+            output=learned["target_output"],
+            token_usage={"prompt_tokens": 11, "completion_tokens": 22},
+            metadata={"runner": "smoke_inference_stub", "max_new_tokens": max_new_tokens},
+        )
+
+    def status(self):
+        return {
+            "backend_name": self.backend_name,
+            "configured": True,
+            "missing_dependencies": [],
+            "required_modules": {},
         }
 
 

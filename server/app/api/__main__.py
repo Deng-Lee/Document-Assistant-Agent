@@ -33,6 +33,7 @@ def main() -> None:
         replan_status = app.state.pda.orchestrator_service.replanner.provider_status()
         evaluation_status = app.state.pda.evaluation_service.provider_status()
         sft_status = app.state.pda.sft_service.training_backend_status()
+        sft_inference_status = app.state.pda.sft_service.inference_backend_status()
         print(f"app_check_ok root_dir={root_dir}")
         print(f"routes={len(app.routes)}")
         print(f"replan_provider_profile={replan_status['profile_name']}")
@@ -49,6 +50,9 @@ def main() -> None:
         print(f"sft_training_backend_available={sft_status['configured']}")
         print(f"sft_training_backend_script_path={sft_status['script_path']}")
         print(f"sft_training_backend_missing_dependencies={','.join(sft_status['missing_dependencies'])}")
+        print(f"sft_inference_backend_name={sft_inference_status['backend_name']}")
+        print(f"sft_inference_backend_available={sft_inference_status['configured']}")
+        print(f"sft_inference_backend_missing_dependencies={','.join(sft_inference_status['missing_dependencies'])}")
         return
     uvicorn.run(app, host=args.host, port=args.port)
 

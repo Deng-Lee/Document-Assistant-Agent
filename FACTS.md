@@ -84,6 +84,7 @@
   - dataset export
   - train row build
   - 真实 Hugging Face LoRA/QLoRA training runner + artifact registration
+  - adapter-backed policy inference backend
   - policy replay/eval wiring
 - API 与本地 UI 已支持：
   - FastAPI endpoints
@@ -103,9 +104,6 @@
 - Evaluation 仍是部分实现：
   - hard metrics、golden set、frozen replay 已有
   - manual rubric 未接入
-- SFT 仍是部分实现：
-  - 真实 LoRA/QLoRA 训练 backend 已接入
-  - 但 frozen replay / eval 的 `policy` variant 仍使用 artifact sidecar 中的结构化 target outputs 做确定性对比，还不是本地 adapter 推理服务
 - 文档同步仍需持续维护：
   - `FACTS.md` 已更新到当前状态
   - 但仍需配合单独的完成度矩阵文档持续跟踪 done / partial / missing
@@ -124,7 +122,7 @@
 ## Planning Implication
 - 该仓库已不再是 greenfield / spec-only 状态。
 - 后端 V1 主链路已基本闭合，接下来的优先事项应聚焦于：
-  - adapter-backed policy inference / replay
+  - 前端工程化补齐（types / SSE / e2e）
   - Evaluation manual rubric
 - 变更前应优先参考：
   - `IMPLEMENTATION_PLAN.md`

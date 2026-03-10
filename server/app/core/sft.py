@@ -20,6 +20,8 @@ class SFTExportRequest(PDABaseModel):
 class SFTExportSample(PDABaseModel):
     trace_id: str
     runtime_config_snapshot: RuntimeConfigSnapshot
+    prompt_version: str | None = None
+    prompt_hash: str | None = None
     gate_decision: dict[str, Any] = Field(default_factory=dict)
     coach_clarify_round: int = 0
     confirmed_slots: dict[str, str] = Field(default_factory=dict)

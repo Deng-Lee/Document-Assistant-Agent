@@ -264,10 +264,12 @@ class EvaluationAndSFTTests(unittest.TestCase):
             from server.app.core import ModelVariant, SFTExportRequest, build_runtime_config
             from server.app.sft import SFTService
 
+            inference_backend = _StubInferenceBackend()
             service = SFTService(
                 trace_store=trace_store,
                 policy_root=f"{tmp}/policies",
                 training_backend=_StubTrainingBackend(),
+                inference_backend=inference_backend,
             )
             export_dir = f"{tmp}/datasets/sft/v1/test_suite"
             manifest, samples = service.export_dataset(
@@ -323,10 +325,12 @@ class EvaluationAndSFTTests(unittest.TestCase):
             from server.app.sft import SFTService
 
             runtime_config = build_runtime_config()
+            inference_backend = _StubInferenceBackend()
             service = SFTService(
                 trace_store=trace_store,
                 policy_root=f"{tmp}/policies",
                 training_backend=_StubTrainingBackend(),
+                inference_backend=inference_backend,
             )
             export_dir = Path(tmp) / "datasets" / "sft" / "v1" / "policy_suite"
             manifest, samples = service.export_dataset(
@@ -358,6 +362,7 @@ class EvaluationAndSFTTests(unittest.TestCase):
             self.assertTrue((policy_dir / "adapter").exists())
             self.assertTrue((policy_dir / "tokenizer").exists())
             self.assertEqual(service.training_backend_status()["backend_name"], "hf_lora_qlora_v1")
+            self.assertEqual(service.inference_backend_status()["backend_name"], "hf_lora_qlora_inference_v1")
             replayed_trace, final_answer = service.replay_trace(
                 source_trace=trace,
                 variant=ModelVariant.POLICY,
@@ -369,6 +374,7 @@ class EvaluationAndSFTTests(unittest.TestCase):
 
             self.assertEqual(final_answer.observations[0].text, "policy tuned observation")
             self.assertEqual(replayed_trace.generation_log.model, checkpoint.policy_model_ref)
+            self.assertGreaterEqual(len(inference_backend.calls), 1)
 
             eval_service = EvaluationService(
                 trace_store=trace_store,
@@ -486,3 +492,44 @@ class _StubTrainingBackend:
             "required_modules": {},
             "optional_modules": {"bitsandbytes": True},
         }
+
+
+class _StubInferenceBackend:
+    backend_name = "hf_lora_qlora_inference_v1"
+
+    def __init__(self):
+        self.calls = []
+
+    def generate(self, artifact, input_payload, max_new_tokens=1024):
+        from server.app.sft.inference_backend import PolicyInferenceResult
+
+        self.calls.append(
+            {
+                "policy_model_ref": artifact.get("policy_model_ref"),
+                "max_new_tokens": max_new_tokens,
+                "task": input_payload.get("task"),
+            }
+        )
+        signature = _artifact_signature(input_payload)
+        learned = artifact.get("examples", {}).get(signature)
+        if learned is None:
+            raise RuntimeError("missing_stub_example")
+        return PolicyInferenceResult(
+            output=learned["target_output"],
+            token_usage={"prompt_tokens": 12, "completion_tokens": 34},
+            metadata={"runner": "stub_inference"},
+        )
+
+    def status(self):
+        return {
+            "backend_name": self.backend_name,
+            "configured": True,
+            "missing_dependencies": [],
+            "required_modules": {},
+        }
+
+
+def _artifact_signature(input_payload: dict) -> str:
+    import hashlib
+
+    return hashlib.sha1(json.dumps(input_payload, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
