@@ -22,12 +22,13 @@
 | SFT | `done` | dataset export、真实 HF LoRA/QLoRA 训练 runner、policy artifact 注册、adapter-backed policy replay/eval 已接通 | 无关键断裂点 |
 | API | `done` | ingest/chat/retrieve/traces/replay/eval/sft/profile API 已有 | 无关键断裂点 |
 | Profile Persistence | `done` | SQLite 持久化、启动恢复、history API 已接通 | 无关键断裂点 |
-| Web Frontend | `partial` | Next.js App Router 前端已接入，覆盖 dashboard/chat/traces/evaluation 基线，并补了稳定 fixture 与组件测试 | 前后端类型自动同步、SSE/streaming，以及浏览器级端到端回归仍未接入 |
+| Web Frontend | `done` | Next.js App Router 前端已接入，并补齐了前后端契约同步、chat SSE/streaming、组件测试，以及 Playwright 浏览器级端到端回归 | 无关键断裂点 |
 | Canonical Docs | `partial` | `FACTS.md` 已与当前仓库重新对齐 | 后续每轮实现仍需持续同步状态文档 |
 
 ## Highest-Priority Remaining Work
 
-1. 补前后端类型自动同步、SSE/streaming 和浏览器级端到端回归。
+1. 在默认开发环境补齐 `.[training]` 与 adapter inference 依赖，把 SFT training / inference readiness 从环境层面的 `False` 收敛到 `True`。
+2. 继续随代码变更维护 `FACTS.md`、`IMPLEMENTATION_STATUS.md` 和 `to_do.md`，避免文档基线再次漂移。
 
 ## Notes
 

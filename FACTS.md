@@ -98,13 +98,14 @@
   - `scripts/run_test_suite.py`
 
 ## Remaining Relative To V1 Spec
-- 前端仍有工程化缺口：
-  - 已接入 Next.js app router baseline
-  - 但前后端类型仍未自动生成/同步
-  - 尚未接入 SSE/streaming 与更完整的页面工作流
-- 文档同步仍需持续维护：
-  - `FACTS.md` 已更新到当前状态
-  - 但仍需配合单独的完成度矩阵文档持续跟踪 done / partial / missing
+- 前端 V1 主链路已闭合：
+  - Next.js app router baseline 已接入
+  - 前后端契约同步已生成并纳入测试
+  - chat SSE/streaming 已接通
+  - Playwright 浏览器级端到端回归已接入
+- 当前剩余主要是环境与文档层面的持续维护：
+  - 默认开发环境仍未预装 `.[training]` 与 adapter inference 依赖
+  - `FACTS.md` / `IMPLEMENTATION_STATUS.md` / `to_do.md` 仍需随实现持续同步
 
 ## Runtime Constraints Discovered
 - Python 运行环境可用，`chromadb` 当前环境中可导入并用于本地 persistent store。
@@ -120,8 +121,8 @@
 ## Planning Implication
 - 该仓库已不再是 greenfield / spec-only 状态。
 - 后端 V1 主链路已基本闭合，接下来的优先事项应聚焦于：
-  - 前端工程化补齐（types / SSE / e2e）
-  - 文档与前端端到端展示持续补强
+  - 默认开发环境 readiness 补齐（training / inference deps）
+  - 文档与端到端展示持续补强
 - 变更前应优先参考：
   - `IMPLEMENTATION_PLAN.md`
   - `to_do.md`

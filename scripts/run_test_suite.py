@@ -35,6 +35,9 @@ def main() -> None:
     if args.mode in {"all", "unit"}:
         commands.append(["npm", "--prefix", "web", "run", "contracts:check"])
         commands.append(["npm", "--prefix", "web", "run", "test"])
+    if args.mode == "all":
+        commands.append(["npm", "--prefix", "web", "run", "test:e2e"])
+    if args.mode in {"all", "unit"}:
         commands.append([sys.executable, "-m", "unittest", "discover", "-s", "server/tests", "-p", "test_*.py"])
     if args.mode in {"all", "smoke"}:
         commands.append([sys.executable, "scripts/run_smoke_tests.py", "--profile", args.profile])

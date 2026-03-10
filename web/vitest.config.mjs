@@ -14,5 +14,7 @@ export default defineConfig({
     environment: "jsdom",
     setupFiles: "./vitest.setup.js",
     css: false,
+    include: ["tests/**/*.test.{js,jsx}"],
+    exclude: ["e2e/**"],
   },
 });
