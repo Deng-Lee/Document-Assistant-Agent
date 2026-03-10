@@ -56,6 +56,7 @@
   - BM25(FTS5)
   - Dense(Chroma)
   - RRF fusion
+  - optional cross-encoder rerank（fake profile deterministic mock / real profile OpenAI-compatible provider）
   - Evidence Pack 组装
 - Orchestrator 已支持：
   - probe

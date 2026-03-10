@@ -12,6 +12,8 @@ class RankSignals(PDABaseModel):
     bm25_rank: int | None = None
     dense_rank: int | None = None
     rrf_rank: int | None = None
+    cross_encoder_rank: int | None = None
+    cross_encoder_score: float | None = None
 
 
 class EvidencePackItem(PDABaseModel):

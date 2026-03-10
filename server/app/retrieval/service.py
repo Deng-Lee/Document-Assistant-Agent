@@ -26,6 +26,16 @@ from server.app.storage import DocumentRepository, VectorStore
 
 from .fusion import reciprocal_rank_fusion
 from .query_parser import QueryParser
+from .reranker import (
+    CrossEncoderError,
+    CrossEncoderReranker,
+    CrossEncoderSchemaError,
+    CrossEncoderUnavailableError,
+    DeterministicMockCrossEncoderReranker,
+    OpenAICrossEncoderReranker,
+    RerankResult,
+    build_cross_encoder_candidates,
+)
 
 
 class RetrievalOutcome(EvidencePack):
@@ -39,11 +49,13 @@ class RetrievalService:
         document_repository: DocumentRepository,
         vector_store: VectorStore | None = None,
         runtime_config: RuntimeConfigSnapshot | None = None,
+        reranker: CrossEncoderReranker | None = None,
     ):
         self.document_repository = document_repository
         self.vector_store = vector_store
         self.runtime_config = runtime_config or build_runtime_config()
         self.query_parser = QueryParser()
+        self.reranker = reranker or self._default_reranker(self.runtime_config)
 
     def retrieve(
         self,
@@ -72,13 +84,21 @@ class RetrievalService:
             ]
         )
         all_chunks = {chunk.chunk_id: chunk for chunk in structured_hits + bm25_hits + dense_hits}
+        fused_chunks = [all_chunks[chunk_id] for chunk_id in fused_ids if chunk_id in all_chunks]
+        rerank_result = self._run_rerank(retrieval_plan.query_text, fused_chunks, retrieval_plan.top_k)
+        ranked_chunks = self._ordered_chunks(fused_chunks, rerank_result)
         selected_chunks = self._apply_diversity_limit(
-            fused_ids=fused_ids,
-            chunk_map=all_chunks,
+            ranked_chunks=ranked_chunks,
             per_doc_limit=retrieval_plan.per_doc_limit,
             top_k=retrieval_plan.top_k,
         )
-        evidence_items = self._build_evidence_pack(selected_chunks, structured_hits, bm25_hits, dense_hits)
+        evidence_items = self._build_evidence_pack(
+            selected_chunks,
+            structured_hits,
+            bm25_hits,
+            dense_hits,
+            rerank_result,
+        )
         evidence_pack = EvidencePack(
             items=evidence_items,
             token_budget=retrieval_plan.token_budget,
@@ -89,8 +109,16 @@ class RetrievalService:
             structured_filter_count=len(structured_hits),
             bm25_count=len(bm25_hits),
             dense_count=len(dense_hits),
+            rerank_applied=rerank_result.applied,
+            rerank_status=rerank_result.status,
+            rerank_provider_name=rerank_result.provider_name,
+            rerank_model=rerank_result.model_name,
+            rerank_candidate_count=rerank_result.candidate_count,
             discarded_after_filter=max(len(fused_ids) - len(selected_chunks), 0),
-            notes=["dense_disabled" if not dense_enabled else "dense_enabled"],
+            notes=[
+                "dense_disabled" if not dense_enabled else "dense_enabled",
+                f"rerank_status:{rerank_result.status}",
+            ],
         )
         probe_stats = self._build_probe_stats(query_text, retrieval_plan.filters, selected_chunks, evidence_items) if mode == "probe" else None
         return RetrievalOutcome(
@@ -155,17 +183,13 @@ class RetrievalService:
 
     @staticmethod
     def _apply_diversity_limit(
-        fused_ids: list[str],
-        chunk_map: dict[str, ChunkRecord],
+        ranked_chunks: list[ChunkRecord],
         per_doc_limit: int,
         top_k: int,
     ) -> list[ChunkRecord]:
         doc_counts: dict[str, int] = {}
         selected: list[ChunkRecord] = []
-        for chunk_id in fused_ids:
-            chunk = chunk_map.get(chunk_id)
-            if chunk is None:
-                continue
+        for chunk in ranked_chunks:
             if doc_counts.get(chunk.doc_id, 0) >= per_doc_limit:
                 continue
             selected.append(chunk)
@@ -180,10 +204,14 @@ class RetrievalService:
         structured_hits: list[ChunkRecord],
         bm25_hits: list[ChunkRecord],
         dense_hits: list[ChunkRecord],
+        rerank_result: RerankResult,
     ) -> list[EvidencePackItem]:
         structured_ranks = {chunk.chunk_id: index for index, chunk in enumerate(structured_hits, start=1)}
         bm25_ranks = {chunk.chunk_id: index for index, chunk in enumerate(bm25_hits, start=1)}
         dense_ranks = {chunk.chunk_id: index for index, chunk in enumerate(dense_hits, start=1)}
+        cross_encoder_ranks = {
+            chunk_id: index for index, chunk_id in enumerate(rerank_result.ordered_chunk_ids, start=1)
+        } if rerank_result.applied else {}
         return [
             EvidencePackItem(
                 evidence_id=chunk.chunk_id,
@@ -198,10 +226,91 @@ class RetrievalService:
                     bm25_rank=bm25_ranks.get(chunk.chunk_id),
                     dense_rank=dense_ranks.get(chunk.chunk_id),
                     rrf_rank=index,
+                    cross_encoder_rank=cross_encoder_ranks.get(chunk.chunk_id),
+                    cross_encoder_score=rerank_result.scores_by_chunk.get(chunk.chunk_id),
                 ),
             )
             for index, chunk in enumerate(selected_chunks, start=1)
         ]
+
+    def provider_status(self) -> dict[str, object]:
+        provider_name = self.reranker.__class__.__name__ if self.reranker is not None else None
+        transport = getattr(self.reranker, "transport", None)
+        return {
+            "profile_name": self.runtime_config.model_routing.profile_name,
+            "provider_name": provider_name,
+            "configured": bool(getattr(self.reranker, "is_ready", False)),
+            "base_url": getattr(transport, "base_url", None),
+            "model": getattr(self.reranker, "model_name", None),
+            "enabled": self.runtime_config.reranker.enabled,
+        }
+
+    def _run_rerank(self, query_text: str, fused_chunks: list[ChunkRecord], top_k: int) -> RerankResult:
+        if not self.runtime_config.reranker.enabled or self.reranker is None:
+            return RerankResult(
+                applied=False,
+                status="disabled",
+                provider_name=getattr(self.reranker, "provider_name", None) if self.reranker is not None else None,
+                model_name=getattr(self.reranker, "model_name", None),
+                candidate_count=0,
+                ordered_chunk_ids=[chunk.chunk_id for chunk in fused_chunks],
+                scores_by_chunk={},
+            )
+        if not fused_chunks:
+            return RerankResult(
+                applied=False,
+                status="skipped_no_candidates",
+                provider_name=getattr(self.reranker, "provider_name", self.reranker.__class__.__name__),
+                model_name=getattr(self.reranker, "model_name", None),
+                candidate_count=0,
+                ordered_chunk_ids=[],
+                scores_by_chunk={},
+            )
+        candidate_limit = min(
+            len(fused_chunks),
+            max(top_k * self.runtime_config.reranker.candidate_pool_multiplier, top_k),
+            self.runtime_config.reranker.max_candidates,
+        )
+        candidates = build_cross_encoder_candidates(fused_chunks[:candidate_limit])
+        try:
+            result = self.reranker.rerank(query_text, candidates)
+        except CrossEncoderUnavailableError:
+            status = "provider_unavailable"
+        except CrossEncoderSchemaError:
+            status = "schema_invalid"
+        except CrossEncoderError:
+            status = "provider_error"
+        else:
+            if result.ordered_chunk_ids:
+                remainder = [chunk.chunk_id for chunk in fused_chunks[candidate_limit:]]
+                result.ordered_chunk_ids = result.ordered_chunk_ids + remainder
+            return result
+        return RerankResult(
+            applied=False,
+            status=status,
+            provider_name=getattr(self.reranker, "provider_name", self.reranker.__class__.__name__),
+            model_name=getattr(self.reranker, "model_name", None),
+            candidate_count=len(candidates),
+            ordered_chunk_ids=[chunk.chunk_id for chunk in fused_chunks],
+            scores_by_chunk={},
+        )
+
+    @staticmethod
+    def _ordered_chunks(fused_chunks: list[ChunkRecord], rerank_result: RerankResult) -> list[ChunkRecord]:
+        chunk_map = {chunk.chunk_id: chunk for chunk in fused_chunks}
+        return [chunk_map[chunk_id] for chunk_id in rerank_result.ordered_chunk_ids if chunk_id in chunk_map]
+
+    @staticmethod
+    def _default_reranker(runtime_config: RuntimeConfigSnapshot) -> CrossEncoderReranker | None:
+        if not runtime_config.reranker.enabled:
+            return None
+        if runtime_config.model_routing.profile_name == "fake":
+            return DeterministicMockCrossEncoderReranker(
+                model_name=runtime_config.reranker.model or "mock-cross-encoder-v1"
+            )
+        if runtime_config.reranker.provider == "openai":
+            return OpenAICrossEncoderReranker(runtime_config)
+        return None
 
     @staticmethod
     def _build_probe_stats(

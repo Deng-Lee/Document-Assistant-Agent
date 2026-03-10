@@ -4719,6 +4719,14 @@ export const apiContracts = {
             "title": "Bm25 Rank",
             "type": "integer"
           },
+          "cross_encoder_rank": {
+            "title": "Cross Encoder Rank",
+            "type": "integer"
+          },
+          "cross_encoder_score": {
+            "title": "Cross Encoder Score",
+            "type": "number"
+          },
           "dense_rank": {
             "title": "Dense Rank",
             "type": "integer"
@@ -4909,6 +4917,14 @@ export const apiContracts = {
           "bm25_rank": {
             "title": "Bm25 Rank",
             "type": "integer"
+          },
+          "cross_encoder_rank": {
+            "title": "Cross Encoder Rank",
+            "type": "integer"
+          },
+          "cross_encoder_score": {
+            "title": "Cross Encoder Score",
+            "type": "number"
           },
           "dense_rank": {
             "title": "Dense Rank",
@@ -6262,6 +6278,14 @@ export const apiContracts = {
             "title": "Bm25 Rank",
             "type": "integer"
           },
+          "cross_encoder_rank": {
+            "title": "Cross Encoder Rank",
+            "type": "integer"
+          },
+          "cross_encoder_score": {
+            "title": "Cross Encoder Score",
+            "type": "number"
+          },
           "dense_rank": {
             "title": "Dense Rank",
             "type": "integer"
@@ -7532,6 +7556,40 @@ export const apiContracts = {
         "title": "PromptVersions",
         "type": "object"
       },
+      "RerankerConfig": {
+        "additionalProperties": false,
+        "description": "Shared model base so all contracts behave consistently.",
+        "properties": {
+          "candidate_pool_multiplier": {
+            "default": 3,
+            "minimum": 1,
+            "title": "Candidate Pool Multiplier",
+            "type": "integer"
+          },
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "max_candidates": {
+            "default": 24,
+            "minimum": 1,
+            "title": "Max Candidates",
+            "type": "integer"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "provider": {
+            "default": "mock",
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "title": "RerankerConfig",
+        "type": "object"
+      },
       "RetrievalLimits": {
         "additionalProperties": false,
         "description": "Shared model base so all contracts behave consistently.",
@@ -7614,6 +7672,9 @@ export const apiContracts = {
       },
       "prompt_versions": {
         "$ref": "#/definitions/PromptVersions"
+      },
+      "reranker": {
+        "$ref": "#/definitions/RerankerConfig"
       },
       "retrieval": {
         "$ref": "#/definitions/RetrievalLimits"
@@ -8115,6 +8176,14 @@ export const apiContracts = {
             "title": "Bm25 Rank",
             "type": "integer"
           },
+          "cross_encoder_rank": {
+            "title": "Cross Encoder Rank",
+            "type": "integer"
+          },
+          "cross_encoder_score": {
+            "title": "Cross Encoder Score",
+            "type": "number"
+          },
           "dense_rank": {
             "title": "Dense Rank",
             "type": "integer"
@@ -8130,6 +8199,40 @@ export const apiContracts = {
           }
         },
         "title": "RankSignals",
+        "type": "object"
+      },
+      "RerankerConfig": {
+        "additionalProperties": false,
+        "description": "Shared model base so all contracts behave consistently.",
+        "properties": {
+          "candidate_pool_multiplier": {
+            "default": 3,
+            "minimum": 1,
+            "title": "Candidate Pool Multiplier",
+            "type": "integer"
+          },
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "max_candidates": {
+            "default": 24,
+            "minimum": 1,
+            "title": "Max Candidates",
+            "type": "integer"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "provider": {
+            "default": "mock",
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "title": "RerankerConfig",
         "type": "object"
       },
       "RetrievalLimits": {
@@ -8206,6 +8309,9 @@ export const apiContracts = {
           },
           "prompt_versions": {
             "$ref": "#/definitions/PromptVersions"
+          },
+          "reranker": {
+            "$ref": "#/definitions/RerankerConfig"
           },
           "retrieval": {
             "$ref": "#/definitions/RetrievalLimits"
@@ -9343,6 +9449,14 @@ export const apiContracts = {
             "title": "Bm25 Rank",
             "type": "integer"
           },
+          "cross_encoder_rank": {
+            "title": "Cross Encoder Rank",
+            "type": "integer"
+          },
+          "cross_encoder_score": {
+            "title": "Cross Encoder Score",
+            "type": "number"
+          },
           "dense_rank": {
             "title": "Dense Rank",
             "type": "integer"
@@ -9405,6 +9519,40 @@ export const apiContracts = {
           "entrypoint"
         ],
         "title": "RequestLog",
+        "type": "object"
+      },
+      "RerankerConfig": {
+        "additionalProperties": false,
+        "description": "Shared model base so all contracts behave consistently.",
+        "properties": {
+          "candidate_pool_multiplier": {
+            "default": 3,
+            "minimum": 1,
+            "title": "Candidate Pool Multiplier",
+            "type": "integer"
+          },
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "max_candidates": {
+            "default": 24,
+            "minimum": 1,
+            "title": "Max Candidates",
+            "type": "integer"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "provider": {
+            "default": "mock",
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "title": "RerankerConfig",
         "type": "object"
       },
       "RetrievalFilters": {
@@ -9513,6 +9661,30 @@ export const apiContracts = {
           "probe_stats": {
             "$ref": "#/definitions/ProbeStats"
           },
+          "rerank_applied": {
+            "default": false,
+            "title": "Rerank Applied",
+            "type": "boolean"
+          },
+          "rerank_candidate_count": {
+            "default": 0,
+            "minimum": 0,
+            "title": "Rerank Candidate Count",
+            "type": "integer"
+          },
+          "rerank_model": {
+            "title": "Rerank Model",
+            "type": "string"
+          },
+          "rerank_provider_name": {
+            "title": "Rerank Provider Name",
+            "type": "string"
+          },
+          "rerank_status": {
+            "default": "disabled",
+            "title": "Rerank Status",
+            "type": "string"
+          },
           "retrieval_plan": {
             "$ref": "#/definitions/RetrievalPlan"
           },
@@ -9613,6 +9785,9 @@ export const apiContracts = {
           },
           "prompt_versions": {
             "$ref": "#/definitions/PromptVersions"
+          },
+          "reranker": {
+            "$ref": "#/definitions/RerankerConfig"
           },
           "retrieval": {
             "$ref": "#/definitions/RetrievalLimits"

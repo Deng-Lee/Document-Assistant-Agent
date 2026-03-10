@@ -74,6 +74,13 @@ def main() -> None:
             from server.app.api.state import create_app_state
 
             real_state = create_app_state(real_root)
+            retrieval_status = real_state.retrieval_service.provider_status()
+            assert retrieval_status["profile_name"] == "real"
+            assert retrieval_status["provider_name"] == "OpenAICrossEncoderReranker"
+            assert retrieval_status["configured"] is True
+            assert retrieval_status["model"] == "gpt-4.1-mini"
+            assert retrieval_status["base_url"] == "https://smoke.example.invalid/v1"
+            print("real_retrieval_reranker_smoke_ok")
             replan_status = real_state.orchestrator_service.replanner.provider_status()
             assert replan_status["profile_name"] == "real"
             assert replan_status["provider_name"] == "OpenAIReplanProvider"
@@ -302,6 +309,8 @@ def main() -> None:
         assert len(retrieval_outcome.items) >= 1
         assert retrieval_outcome.probe_stats is not None
         assert retrieval_outcome.probe_stats.doc_type_hist["BJJ"] >= 1
+        assert retrieval_outcome.retrieval_log.rerank_applied is True
+        assert any(item.rank_signals.cross_encoder_score is not None for item in retrieval_outcome.items)
         print("retrieval_smoke_ok")
 
         orchestrator = OrchestratorService(retrieval)

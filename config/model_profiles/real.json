@@ -5,6 +5,13 @@
   "policy_model": "policy://pending",
   "embedding_model": "text-embedding-3-large",
   "embedding_version_id": "text-embedding-3-large:default",
+  "reranker": {
+    "enabled": true,
+    "provider": "openai",
+    "model": "gpt-4.1-mini",
+    "candidate_pool_multiplier": 3,
+    "max_candidates": 24
+  },
   "generation": {
     "bjj": {
       "temperature": 0.1,

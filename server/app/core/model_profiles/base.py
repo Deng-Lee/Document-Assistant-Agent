@@ -18,6 +18,14 @@ class GenerationProfileSet(PDABaseModel):
     safe_summary: GenerationParams = Field(default_factory=lambda: GenerationParams(temperature=0.0, top_p=1.0, max_tokens=256))
 
 
+class RerankerProfileSettings(PDABaseModel):
+    enabled: bool = False
+    provider: str = "mock"
+    model: str | None = None
+    candidate_pool_multiplier: int = Field(default=3, ge=1)
+    max_candidates: int = Field(default=24, ge=1)
+
+
 class ModelProfileSettings(PDABaseModel):
     name: str
     provider: str
@@ -26,3 +34,4 @@ class ModelProfileSettings(PDABaseModel):
     embedding_model: str
     embedding_version_id: str
     generation: GenerationProfileSet = Field(default_factory=GenerationProfileSet)
+    reranker: RerankerProfileSettings = Field(default_factory=RerankerProfileSettings)

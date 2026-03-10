@@ -66,7 +66,7 @@ from .retrieval import (
     RetrievalPlan,
     TimeSignal,
 )
-from .runtime_config import DEFAULT_RUNTIME_CONFIG, RuntimeConfigSnapshot, build_runtime_config
+from .runtime_config import DEFAULT_RUNTIME_CONFIG, RerankerConfig, RuntimeConfigSnapshot, build_runtime_config
 from .schema_registry import export_contract_schemas
 from .sft import PolicyCheckpointRecord, PolicyTrainRequest, SFTDatasetManifest, SFTExportRequest, SFTExportSample
 from .tracing import (
@@ -152,6 +152,7 @@ __all__ = [
     "ProfileConstraint",
     "ProfileSummary",
     "RankSignals",
+    "RerankerConfig",
     "RequestLog",
     "RetrievalFilters",
     "RetrievalLog",

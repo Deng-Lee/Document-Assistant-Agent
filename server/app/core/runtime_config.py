@@ -22,6 +22,14 @@ class RetrievalLimits(PDABaseModel):
     token_budget: int = 4000
 
 
+class RerankerConfig(PDABaseModel):
+    enabled: bool = False
+    provider: str = "mock"
+    model: str | None = None
+    candidate_pool_multiplier: int = Field(default=3, ge=1)
+    max_candidates: int = Field(default=24, ge=1)
+
+
 class OrchestratorThresholds(PDABaseModel):
     domain_bjj_threshold: float = 0.65
     domain_notes_threshold: float = 0.35
@@ -67,6 +75,7 @@ class RuntimeConfigSnapshot(PDABaseModel):
     profile_version_id: str | None = None
     trace_capture_level: TraceCaptureLevel = TraceCaptureLevel.MINIMAL
     retrieval: RetrievalLimits = Field(default_factory=RetrievalLimits)
+    reranker: RerankerConfig = Field(default_factory=RerankerConfig)
     orchestrator: OrchestratorThresholds = Field(default_factory=OrchestratorThresholds)
     bjj_gate: BJJGateThresholds = Field(default_factory=BJJGateThresholds)
     model_routing: ModelRoutingConfig = Field(default_factory=lambda: _model_routing_from_profile(get_model_profile()))
@@ -76,6 +85,7 @@ def build_runtime_config(profile_name: str | None = None) -> RuntimeConfigSnapsh
     profile = get_model_profile(profile_name)
     return RuntimeConfigSnapshot(
         embedding_version_id=profile.embedding_version_id,
+        reranker=_reranker_config_from_profile(profile),
         model_routing=_model_routing_from_profile(profile),
         generation=_generation_config_from_profile(profile),
     )
@@ -99,6 +109,17 @@ def _generation_config_from_profile(profile: ModelProfileSettings) -> Generation
         literary=dump(generation.literary),
         replan=dump(generation.replan),
         safe_summary=dump(generation.safe_summary),
+    )
+
+
+def _reranker_config_from_profile(profile: ModelProfileSettings) -> RerankerConfig:
+    reranker = profile.reranker
+    return RerankerConfig(
+        enabled=reranker.enabled,
+        provider=reranker.provider,
+        model=reranker.model,
+        candidate_pool_multiplier=reranker.candidate_pool_multiplier,
+        max_candidates=reranker.max_candidates,
     )
 
 

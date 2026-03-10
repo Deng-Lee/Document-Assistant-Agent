@@ -44,6 +44,11 @@ class RetrievalLog(PDABaseModel):
     structured_filter_count: int = Field(default=0, ge=0)
     bm25_count: int = Field(default=0, ge=0)
     dense_count: int = Field(default=0, ge=0)
+    rerank_applied: bool = False
+    rerank_status: str = "disabled"
+    rerank_provider_name: str | None = None
+    rerank_model: str | None = None
+    rerank_candidate_count: int = Field(default=0, ge=0)
     discarded_after_filter: int = Field(default=0, ge=0)
     notes: list[str] = Field(default_factory=list)
 

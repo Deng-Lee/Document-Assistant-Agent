@@ -408,6 +408,12 @@ class APITests(unittest.TestCase):
                 provider = state.orchestrator_service.replanner.provider
                 self.assertEqual(getattr(provider, "api_key", None), "test-local-key")
                 self.assertEqual(getattr(getattr(provider, "transport", None), "base_url", None), "https://example.invalid/v1")
+                retrieval_status = state.retrieval_service.provider_status()
+                self.assertEqual(retrieval_status["profile_name"], "real")
+                self.assertEqual(retrieval_status["provider_name"], "OpenAICrossEncoderReranker")
+                self.assertTrue(retrieval_status["configured"])
+                self.assertEqual(retrieval_status["model"], "gpt-4.1-mini")
+                self.assertEqual(retrieval_status["base_url"], "https://example.invalid/v1")
                 status = state.orchestrator_service.replanner.provider_status()
                 self.assertEqual(status["profile_name"], "real")
                 self.assertEqual(status["provider_name"], "OpenAIReplanProvider")

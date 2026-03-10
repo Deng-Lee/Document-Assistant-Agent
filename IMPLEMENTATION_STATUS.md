@@ -14,7 +14,7 @@
 | Core Contracts & Schemas | `done` | core schema、runtime config、trace/eval/sft contracts 已落地 | 无关键断裂点 |
 | Storage Adapters | `done` | SQLite、FTS5、filestore、trace store、jobs、profiles、真实 Chroma 已接通 | 无关键断裂点 |
 | Ingestion + safe_summary | `done` | text/file/dir/record ingest 与 safe_summary job 已可运行 | 无关键断裂点 |
-| Retrieval + Evidence Pack | `done` | structured + BM25 + dense + RRF + Evidence Pack 已接通 | 无关键断裂点 |
+| Retrieval + Evidence Pack | `done` | structured + BM25 + dense + RRF + optional cross-encoder rerank + Evidence Pack 已接通 | 无关键断裂点 |
 | Orchestrator | `done` | probe、plan_check、clarify、fake mock replan、real-profile OpenAI-compatible replan provider、fallback telemetry 已接通 | 无关键断裂点 |
 | Agents | `done` | BJJ coach、literary、validator-safe path 已可运行 | 无关键断裂点 |
 | Observability + Replay | `done` | minimal/debug capture、trace detail、frozen replay 已接通 | 无关键断裂点 |

@@ -3,7 +3,19 @@ from __future__ import annotations
 import unittest
 from tempfile import TemporaryDirectory
 
+from server.app.core import RerankerConfig, RuntimeConfigSnapshot
 from server.tests.support import activate_test_profile, build_ingested_stack, build_ingested_vector_stack
+
+
+class _UnavailableReranker:
+    provider_name = "unavailable-reranker"
+    model_name = "stub-reranker"
+    is_ready = False
+
+    def rerank(self, query_text, candidates):
+        from server.app.retrieval.reranker import CrossEncoderUnavailableError
+
+        raise CrossEncoderUnavailableError("missing_api_key")
 
 
 class RetrievalTests(unittest.TestCase):
@@ -58,3 +70,51 @@ class RetrievalTests(unittest.TestCase):
 
             self.assertGreaterEqual(outcome.retrieval_log.dense_count, 1)
             self.assertTrue(any(item.rank_signals.dense_rank is not None for item in outcome.items))
+
+    def test_fake_profile_cross_encoder_reranks_and_exposes_scores(self) -> None:
+        with TemporaryDirectory() as tmp:
+            repo, _file_store, _ingestion, _results = build_ingested_stack(tmp, include_bjj=True, include_notes=False)
+
+            from server.app.retrieval import RetrievalService
+
+            outcome = RetrievalService(repo).retrieve(
+                query_text="tripod post inside elbow recovery",
+                mode="full",
+                top_k=3,
+            )
+
+            self.assertTrue(outcome.retrieval_log.rerank_applied)
+            self.assertEqual(outcome.retrieval_log.rerank_status, "success")
+            self.assertEqual(outcome.retrieval_log.rerank_provider_name, "deterministic_mock_cross_encoder_v1")
+            self.assertTrue(any(item.rank_signals.cross_encoder_score is not None for item in outcome.items))
+            self.assertEqual(str(outcome.items[0].metadata_digest.date), "2026-03-04")
+
+    def test_reranker_provider_unavailable_falls_back_without_scores(self) -> None:
+        with TemporaryDirectory() as tmp:
+            repo, _file_store, _ingestion, _results = build_ingested_stack(tmp, include_bjj=True, include_notes=False)
+
+            from server.app.retrieval import RetrievalService
+
+            runtime_config = RuntimeConfigSnapshot(
+                reranker=RerankerConfig(
+                    enabled=True,
+                    provider="openai",
+                    model="stub-reranker",
+                    candidate_pool_multiplier=3,
+                    max_candidates=24,
+                )
+            )
+            outcome = RetrievalService(
+                repo,
+                runtime_config=runtime_config,
+                reranker=_UnavailableReranker(),
+            ).retrieve(
+                query_text="tripod post inside elbow recovery",
+                mode="full",
+                top_k=3,
+            )
+
+            self.assertFalse(outcome.retrieval_log.rerank_applied)
+            self.assertEqual(outcome.retrieval_log.rerank_status, "provider_unavailable")
+            self.assertEqual(outcome.retrieval_log.rerank_provider_name, "unavailable-reranker")
+            self.assertTrue(all(item.rank_signals.cross_encoder_score is None for item in outcome.items))
