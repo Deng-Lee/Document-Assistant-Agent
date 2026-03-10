@@ -1,0 +1,4 @@
+interface:
+  display_name: "QA Full-Chain Tester"
+  short_description: "Run serial adversarial QA from fixtures"
+  default_prompt: "Use $qa-full-chain-tester to run the repo's serial end-to-end QA workflow from test/fixtures and document every result."
