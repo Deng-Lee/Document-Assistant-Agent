@@ -33,6 +33,7 @@ def main() -> None:
 
     commands: list[list[str]] = []
     if args.mode in {"all", "unit"}:
+        commands.append(["npm", "--prefix", "web", "run", "test"])
         commands.append([sys.executable, "-m", "unittest", "discover", "-s", "server/tests", "-p", "test_*.py"])
     if args.mode in {"all", "smoke"}:
         commands.append([sys.executable, "scripts/run_smoke_tests.py", "--profile", args.profile])

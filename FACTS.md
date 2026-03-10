@@ -90,6 +90,7 @@
   - health / ingest / chat / traces / replay / eval / sft / profile flows
 - Tests 与 smoke 已存在：
   - `server/tests/`
+  - `web/tests/`
   - `scripts/run_smoke_tests.py`
   - `scripts/run_test_suite.py`
 
