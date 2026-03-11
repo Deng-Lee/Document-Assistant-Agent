@@ -53,6 +53,7 @@
   - `POST /api/record/notes`
   - provider-backed `safe_summary_build` job + `POST /api/chunks/{chunk_id}/safe_summary/rebuild`
   - `safe_summary` 的显式 `FAILED` 状态与 retry 元数据持久化
+  - `safe_summary` 的自动重试与指数退避，retryable 错误仅在重试耗尽后才落 `FALLBACK`
   - `POST /api/maintenance/reindex`
   - `POST /api/maintenance/reembed`
 - Retrieval 已支持：

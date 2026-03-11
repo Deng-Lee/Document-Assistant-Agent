@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import uuid4
 
 from server.app.core import DocVersionRecord, JobRecord, JobRunResult, JobStatus, RuntimeConfigSnapshot, SummaryStatus, build_runtime_config
+from server.app.ingestion.chunker import build_safe_summary_fallback
 from server.app.storage import DocumentRepository, JobRepository, VectorStore
 from server.app.storage.vector_indexing import build_embedding_upsert_records
 from .safe_summary_provider import (
@@ -17,6 +18,8 @@ from .safe_summary_provider import (
 
 
 class JobService:
+    SAFE_SUMMARY_MAX_RETRIES = 3
+
     def __init__(
         self,
         document_repository: DocumentRepository,
@@ -31,13 +34,20 @@ class JobService:
         self.vector_store = vector_store
         self.safe_summary_provider = safe_summary_provider or build_safe_summary_provider(self.runtime_config)
 
-    def enqueue(self, job_type: str, payload: dict[str, object], job_id: str | None = None) -> JobRecord:
+    def enqueue(
+        self,
+        job_type: str,
+        payload: dict[str, object],
+        job_id: str | None = None,
+        available_at: datetime | None = None,
+    ) -> JobRecord:
         now = datetime.utcnow()
         record = JobRecord(
             job_id=job_id or f"job_{uuid4().hex[:12]}",
             job_type=job_type,
             status=JobStatus.QUEUED,
             payload=payload,
+            available_at=available_at,
             created_at=now,
             updated_at=now,
         )
@@ -256,18 +266,45 @@ class JobService:
         ) as exc:
             failed_at = datetime.utcnow()
             error_code = _safe_summary_error_code(exc)
+            failure_class = _safe_summary_failure_class(exc)
+            retry_count = chunk.summary_retry_count + 1
+            should_retry = failure_class == "retryable" and retry_count < self.SAFE_SUMMARY_MAX_RETRIES
+            next_retry_at = _safe_summary_backoff_at(failed_at, retry_count) if should_retry else None
+            summary_status = SummaryStatus.FAILED.value if should_retry or failure_class == "terminal" else SummaryStatus.FALLBACK.value
+            safe_summary = (
+                chunk.safe_summary or ""
+                if summary_status == SummaryStatus.FAILED.value
+                else build_safe_summary_fallback(chunk.clean_search_text or raw_chunk_text)
+            )
             self.document_repository.update_chunk_summary_state(
                 chunk_id,
-                safe_summary=chunk.safe_summary or "",
+                safe_summary=safe_summary,
                 summary_model=summary_model,
                 summary_prompt_version=prompt_version,
-                summary_status=SummaryStatus.FAILED.value,
+                summary_status=summary_status,
                 summary_error_code=error_code,
-                summary_retry_count=chunk.summary_retry_count + 1,
+                summary_retry_count=retry_count,
                 summary_last_attempt_at=attempt_started_at.isoformat(),
-                summary_next_retry_at=None,
+                summary_next_retry_at=next_retry_at.isoformat() if next_retry_at else None,
                 summary_last_error_at=failed_at.isoformat(),
             )
+            if should_retry:
+                self.enqueue(
+                    "safe_summary_build",
+                    {
+                        **job.payload,
+                        "retry_attempt": retry_count,
+                    },
+                    available_at=next_retry_at,
+                )
+            elif summary_status == SummaryStatus.FALLBACK.value:
+                return [
+                    "safe_summary_fallback",
+                    f"prompt_version={prompt_version}",
+                    f"summary_model={summary_model}",
+                    f"summary_error_code={error_code}",
+                    f"retry_count={retry_count}",
+                ]
             raise RuntimeError(error_code) from exc
         self.document_repository.update_chunk_summary_state(
             chunk_id,
@@ -326,3 +363,16 @@ def _safe_summary_error_code(exc: Exception) -> str:
     if isinstance(exc, SafeSummaryProviderError):
         return f"provider_error:{exc}"
     return f"provider_error:{exc}"
+
+
+def _safe_summary_failure_class(exc: Exception) -> str:
+    if isinstance(exc, SafeSummaryProviderSchemaError):
+        return "terminal"
+    if isinstance(exc, (SafeSummaryProviderUnavailableError, SafeSummaryProviderError)):
+        return "retryable"
+    return "retryable"
+
+
+def _safe_summary_backoff_at(failed_at: datetime, retry_count: int) -> datetime:
+    delay_seconds = max(2 ** max(retry_count - 1, 0), 1)
+    return failed_at + timedelta(seconds=delay_seconds)

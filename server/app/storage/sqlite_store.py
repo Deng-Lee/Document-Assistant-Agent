@@ -53,6 +53,7 @@ class SQLiteStore:
         _ensure_column(connection, "chunks", "summary_last_attempt_at", "TEXT")
         _ensure_column(connection, "chunks", "summary_next_retry_at", "TEXT")
         _ensure_column(connection, "chunks", "summary_last_error_at", "TEXT")
+        _ensure_column(connection, "jobs", "available_at", "TEXT")
 
 
 class SQLiteDocumentRepository:
@@ -562,8 +563,8 @@ class SQLiteJobRepository:
             connection.execute(
                 """
                 INSERT OR REPLACE INTO jobs
-                (job_id, job_type, status, payload_json, error_message, created_at, updated_at)
-                VALUES (:job_id, :job_type, :status, :payload_json, :error_message, :created_at, :updated_at)
+                (job_id, job_type, status, payload_json, error_message, available_at, created_at, updated_at)
+                VALUES (:job_id, :job_type, :status, :payload_json, :error_message, :available_at, :created_at, :updated_at)
                 """,
                 {
                     "job_id": payload["job_id"],
@@ -571,6 +572,7 @@ class SQLiteJobRepository:
                     "status": payload["status"],
                     "payload_json": model_to_json(job.payload),
                     "error_message": payload.get("error_message"),
+                    "available_at": payload.get("available_at"),
                     "created_at": payload["created_at"],
                     "updated_at": payload["updated_at"],
                 },
@@ -581,7 +583,7 @@ class SQLiteJobRepository:
         with self.store.connect() as connection:
             row = connection.execute(
                 """
-                SELECT job_id, job_type, status, payload_json, error_message, created_at, updated_at
+                SELECT job_id, job_type, status, payload_json, error_message, available_at, created_at, updated_at
                 FROM jobs
                 WHERE job_id = ?
                 """,
@@ -591,14 +593,14 @@ class SQLiteJobRepository:
 
     def list_jobs(self, status: JobStatus | None = None, limit: int | None = None) -> list[JobRecord]:
         sql = """
-            SELECT job_id, job_type, status, payload_json, error_message, created_at, updated_at
+            SELECT job_id, job_type, status, payload_json, error_message, available_at, created_at, updated_at
             FROM jobs
         """
         parameters: list[object] = []
         if status is not None:
             sql += " WHERE status = ?"
             parameters.append(status.value)
-        sql += " ORDER BY created_at ASC, job_id ASC"
+        sql += " ORDER BY COALESCE(available_at, created_at) ASC, created_at ASC, job_id ASC"
         if limit is not None:
             sql += " LIMIT ?"
             parameters.append(limit)
@@ -607,8 +609,8 @@ class SQLiteJobRepository:
         return [_row_to_job(row) for row in rows]
 
     def claim_next_job(self, job_types: list[str] | None = None) -> JobRecord | None:
-        clauses = ["status = ?"]
-        parameters: list[object] = [JobStatus.QUEUED.value]
+        clauses = ["status = ?", "(available_at IS NULL OR available_at <= ?)"]
+        parameters: list[object] = [JobStatus.QUEUED.value, datetime.utcnow().isoformat()]
         if job_types:
             placeholders = ", ".join("?" for _ in job_types)
             clauses.append(f"job_type IN ({placeholders})")
@@ -617,10 +619,10 @@ class SQLiteJobRepository:
         with self.store.connect() as connection:
             row = connection.execute(
                 f"""
-                SELECT job_id, job_type, status, payload_json, error_message, created_at, updated_at
+                SELECT job_id, job_type, status, payload_json, error_message, available_at, created_at, updated_at
                 FROM jobs
                 WHERE {' AND '.join(clauses)}
-                ORDER BY created_at ASC, job_id ASC
+                ORDER BY COALESCE(available_at, created_at) ASC, created_at ASC, job_id ASC
                 LIMIT 1
                 """,
                 tuple(parameters),
@@ -660,6 +662,7 @@ class SQLiteJobRepository:
 def _row_to_job(row) -> JobRecord:
     payload = dict(row)
     payload["payload"] = parse_json_blob(payload.pop("payload_json"))
+    payload["available_at"] = payload.get("available_at")
     return JobRecord(**payload)
 
 

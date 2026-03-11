@@ -142,6 +142,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     status TEXT NOT NULL,
     payload_json TEXT NOT NULL,
     error_message TEXT,
+    available_at TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );

@@ -37,7 +37,7 @@ class JobServiceTests(unittest.TestCase):
             self.assertIsNone(updated.summary_last_error_at)
             self.assertEqual(job_repo.get_job(queued.job_id).status.value, "succeeded")
 
-    def test_safe_summary_job_marks_failed_on_first_provider_error(self) -> None:
+    def test_safe_summary_job_requeues_retryable_provider_error(self) -> None:
         with TemporaryDirectory() as tmp:
             repo, job_repo, _job_service, chunk = _build_job_stack(tmp)
 
@@ -73,8 +73,75 @@ class JobServiceTests(unittest.TestCase):
             self.assertEqual(updated.summary_retry_count, 1)
             self.assertIsNotNone(updated.summary_last_attempt_at)
             self.assertIsNotNone(updated.summary_last_error_at)
-            self.assertIsNone(updated.summary_next_retry_at)
+            self.assertIsNotNone(updated.summary_next_retry_at)
             self.assertEqual(job_repo.get_job(queued.job_id).error_message, "provider_error:synthetic_failure")
+            queued_jobs = [job for job in job_repo.list_jobs() if job.status.value == "queued"]
+            self.assertEqual(len(queued_jobs), 1)
+            self.assertIsNotNone(queued_jobs[0].available_at)
+            self.assertEqual(queued_jobs[0].payload["retry_attempt"], 1)
+            self.assertIsNone(job_service.run_next(job_types=["safe_summary_build"]))
+
+    def test_safe_summary_job_schema_error_does_not_retry(self) -> None:
+        with TemporaryDirectory() as tmp:
+            repo, job_repo, _job_service, chunk = _build_job_stack(tmp)
+
+            from server.app.jobs import JobService
+            from server.app.jobs.safe_summary_provider import SafeSummaryProviderSchemaError
+
+            class _SchemaFailingProvider:
+                provider_name = "schema-failing-summary-provider"
+                model_name = "schema-failing-model"
+                is_ready = True
+
+                def summarize(self, request):
+                    raise SafeSummaryProviderSchemaError("invalid_json_response")
+
+            job_service = JobService(repo, job_repo, safe_summary_provider=_SchemaFailingProvider())
+            queued = job_service.enqueue("safe_summary_build", {"chunk_id": chunk.chunk_id})
+
+            result = job_service.run_job(queued.job_id)
+
+            self.assertEqual(result.job.status.value, "failed")
+            updated = repo.get_chunk(chunk.chunk_id)
+            self.assertEqual(updated.summary_status.value, "failed")
+            self.assertEqual(updated.summary_error_code, "provider_schema_error:invalid_json_response")
+            self.assertIsNone(updated.summary_next_retry_at)
+            self.assertEqual(job_repo.list_jobs(status=None, limit=None)[0].job_id, queued.job_id)
+            self.assertEqual([job for job in job_repo.list_jobs() if job.status.value == "queued"], [])
+
+    def test_safe_summary_job_falls_back_after_retry_exhaustion(self) -> None:
+        with TemporaryDirectory() as tmp:
+            repo, job_repo, _job_service, chunk = _build_job_stack(tmp)
+
+            from server.app.jobs import JobService
+            from server.app.jobs.safe_summary_provider import SafeSummaryProviderError
+
+            class _AlwaysFailingProvider:
+                provider_name = "always-failing-summary-provider"
+                model_name = "always-failing-model"
+                is_ready = True
+
+                def summarize(self, request):
+                    raise SafeSummaryProviderError("still_failing")
+
+            job_service = JobService(repo, job_repo, safe_summary_provider=_AlwaysFailingProvider())
+            first_job = job_service.enqueue("safe_summary_build", {"chunk_id": chunk.chunk_id})
+
+            first_result = job_service.run_job(first_job.job_id)
+            retry_jobs = [job for job in job_repo.list_jobs() if job.status.value == "queued"]
+            second_result = job_service.run_job(retry_jobs[0].job_id)
+            retry_jobs = [job for job in job_repo.list_jobs() if job.status.value == "queued"]
+            third_result = job_service.run_job(retry_jobs[0].job_id)
+
+            self.assertEqual(first_result.job.status.value, "failed")
+            self.assertEqual(second_result.job.status.value, "failed")
+            self.assertEqual(third_result.job.status.value, "succeeded")
+            self.assertIn("safe_summary_fallback", third_result.notes)
+            updated = repo.get_chunk(chunk.chunk_id)
+            self.assertEqual(updated.summary_status.value, "fallback")
+            self.assertEqual(updated.summary_retry_count, 3)
+            self.assertTrue(updated.safe_summary)
+            self.assertEqual([job for job in job_repo.list_jobs() if job.status.value == "queued"], [])
 
     def test_reindex_and_reembed_jobs_complete(self) -> None:
         with TemporaryDirectory() as tmp:

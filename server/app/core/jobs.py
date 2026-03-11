@@ -15,6 +15,7 @@ class JobRecord(PDABaseModel):
     status: JobStatus = JobStatus.QUEUED
     payload: dict[str, Any] = Field(default_factory=dict)
     error_message: str | None = None
+    available_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -23,4 +24,3 @@ class JobRunResult(PDABaseModel):
     job: JobRecord
     handled: bool = True
     notes: list[str] = Field(default_factory=list)
-
