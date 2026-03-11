@@ -9,9 +9,9 @@
 - 端到端可观测性、回放、离线评估，以及 Policy SFT
 
 ## 当前基线（Current Baseline）
-- 当前仓库处于“仅规格说明（spec-only）”状态；尚未创建 `server/`、`web/`、`datasets/` 或 `data/` 等脚手架目录。
-- 规划假设已记录在 `DECISIONS.md`。
-- 在 `OPEN_QUESTIONS.json` 中未发现阻塞性的确认项（blocking confirmation items）。
+- 当前仓库已经不再是 `spec-only`：`server/`、`web/`、`scripts/`、`datasets/`、`data/` 等主目录均已落地，后端主链路、Next.js 前端基线、trace/replay、eval、SFT 与测试入口均已接通。
+- `DECISIONS.md` 仍是关键决策来源，但本计划文件现在应被视为“对照 DEV_SPEC 的实现基线与收口参考”，而不是 greenfield 脚手架计划。
+- `OPEN_QUESTIONS.json` 当前没有阻塞性确认项；未收口能力以 `IMPLEMENTATION_AUDIT.md`、`IMPLEMENTATION_STATUS.md`、`to_do.md` 为准。
 
 ## 交付原则（Delivery Principles）
 - 仅实现 Phase 1 / V1；除非为可回放性或 validator 安全性所必需，否则推迟 V1.1+ 项。
@@ -271,4 +271,3 @@
 4. 在 Literary 打磨之前，先打通 orchestrator + BJJ validator 关键链路。
 5. 在大规模评测或 SFT 导出之前，先把 traces 与 replay 打通。
 6. 最后再生成数据集，跑 LoRA/QLoRA dry-run，并对比 base vs policy。
-

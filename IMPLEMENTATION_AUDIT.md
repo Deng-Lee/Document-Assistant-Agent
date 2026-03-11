@@ -46,7 +46,7 @@
 | SFT readiness in default dev env | `partial` | 代码路径已具备，但默认开发环境依赖未就绪，这仍是环境层面的未收口。 | [FACTS.md](/Users/lee/Documents/AI/Document%20Assistant%20Agent/FACTS.md), [server/app/api/__main__.py](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/app/api/__main__.py) |
 | Profile persistence and history | `done` | 持久化、启动恢复、history API 已接通。 | [server/app/api/app.py](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/app/api/app.py#L337) |
 | Web frontend baseline | `partial` | Next.js、SSE、contract sync、component test、Playwright 已有；但 spec 点名的 Tailwind + shadcn/ui 当前并未接入，不能说完全等价于原方案。 | [DEV_SPEC.md](/Users/lee/Documents/AI/Document%20Assistant%20Agent/DEV_SPEC.md#L64), [web/package.json](/Users/lee/Documents/AI/Document%20Assistant%20Agent/web/package.json#L1) |
-| Canonical plan doc baseline accuracy | `drift` | `IMPLEMENTATION_PLAN.md` 的“当前基线”仍写 repo 是 spec-only，和当前仓库事实不符。canonical plan 文档没有随实现同步。 | [IMPLEMENTATION_PLAN.md](/Users/lee/Documents/AI/Document%20Assistant%20Agent/IMPLEMENTATION_PLAN.md#L11) |
+| Canonical plan doc baseline accuracy | `done` | `IMPLEMENTATION_PLAN.md` 的 current baseline 已改写为当前真实仓库状态，不再把 repo 误写成 `spec-only`。 | [IMPLEMENTATION_PLAN.md](/Users/lee/Documents/AI/Document%20Assistant%20Agent/IMPLEMENTATION_PLAN.md#L11) |
 
 ## Summary
 
