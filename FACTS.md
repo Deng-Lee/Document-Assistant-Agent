@@ -80,7 +80,7 @@
   - structured trace/span/event
   - trace detail
   - frozen replay
-  - minimal/debug capture policy
+  - strict minimal/debug capture policy（minimal 不再持久化 raw query input，debug 仍保留 preview/excerpt）
 - Evaluation 已支持：
   - repo-file golden set loader
   - frozen replay eval

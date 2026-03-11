@@ -179,17 +179,7 @@ class TraceRecorder:
     def _apply_generation_capture_level(self, generation_log: GenerationLog) -> GenerationLog:
         input_snapshot = generation_log.input_snapshot
         if input_snapshot is not None:
-            input_snapshot = GenerationInputSnapshot(
-                task=input_snapshot.task,
-                query_original=input_snapshot.query_original,
-                query_clean=input_snapshot.query_clean,
-                confirmed_slots=dict(input_snapshot.confirmed_slots),
-                coach_clarify_round=input_snapshot.coach_clarify_round,
-                coach_pending_slot=input_snapshot.coach_pending_slot,
-                profile_summary_snapshot=input_snapshot.profile_summary_snapshot,
-                profile_version_id=input_snapshot.profile_version_id,
-                frozen_evidence_pack=self._apply_capture_level(input_snapshot.frozen_evidence_pack),
-            )
+            input_snapshot = self._sanitize_input_snapshot(input_snapshot)
 
         prompt_snapshot = generation_log.prompt_snapshot
         if prompt_snapshot is not None:
@@ -211,6 +201,31 @@ class TraceRecorder:
             cost_estimate=generation_log.cost_estimate,
             output=dict(generation_log.output),
             validator_report=generation_log.validator_report,
+        )
+
+    def _sanitize_input_snapshot(self, input_snapshot: GenerationInputSnapshot) -> GenerationInputSnapshot:
+        if self.runtime_config_snapshot.trace_capture_level == TraceCaptureLevel.DEBUG:
+            return GenerationInputSnapshot(
+                task=input_snapshot.task,
+                query_original=input_snapshot.query_original,
+                query_clean=input_snapshot.query_clean,
+                confirmed_slots=dict(input_snapshot.confirmed_slots),
+                coach_clarify_round=input_snapshot.coach_clarify_round,
+                coach_pending_slot=input_snapshot.coach_pending_slot,
+                profile_summary_snapshot=input_snapshot.profile_summary_snapshot,
+                profile_version_id=input_snapshot.profile_version_id,
+                frozen_evidence_pack=self._apply_capture_level(input_snapshot.frozen_evidence_pack),
+            )
+        return GenerationInputSnapshot(
+            task=input_snapshot.task,
+            query_original="",
+            query_clean="",
+            confirmed_slots=dict(input_snapshot.confirmed_slots),
+            coach_clarify_round=input_snapshot.coach_clarify_round,
+            coach_pending_slot=input_snapshot.coach_pending_slot,
+            profile_summary_snapshot=None,
+            profile_version_id=input_snapshot.profile_version_id,
+            frozen_evidence_pack=self._apply_capture_level(input_snapshot.frozen_evidence_pack),
         )
 
     def _sanitize_prompt_snapshot(self, prompt_snapshot: PromptSnapshot) -> PromptSnapshot:

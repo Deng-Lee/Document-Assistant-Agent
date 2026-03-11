@@ -447,9 +447,26 @@ class SFTService:
         fallback_profile: ProfileSummary,
     ) -> GenerationInputSnapshot:
         snapshot = trace.generation_log.input_snapshot
-        if snapshot is not None:
-            return _copy_model(snapshot)
         retrieval_plan = trace.retrieval_log.retrieval_plan
+        if snapshot is not None:
+            hydrated = _copy_model(snapshot)
+            if not hydrated.query_original and retrieval_plan is not None:
+                hydrated.query_original = retrieval_plan.query_original
+            if not hydrated.query_clean and retrieval_plan is not None:
+                hydrated.query_clean = retrieval_plan.query_text
+            if hydrated.profile_summary_snapshot is None:
+                hydrated.profile_summary_snapshot = ProfileSummary(
+                    profile_version_id=hydrated.profile_version_id or trace.request_log.profile_version_id or fallback_profile.profile_version_id,
+                    ruleset_default=fallback_profile.ruleset_default,
+                    injuries=_copy_model(fallback_profile.injuries),
+                    forbidden_actions=_copy_model(fallback_profile.forbidden_actions),
+                    preferences=_copy_model(fallback_profile.preferences),
+                )
+            if not hydrated.profile_version_id and hydrated.profile_summary_snapshot is not None:
+                hydrated.profile_version_id = hydrated.profile_summary_snapshot.profile_version_id
+            if not hydrated.frozen_evidence_pack.items:
+                hydrated.frozen_evidence_pack = _copy_model(trace.evidence_log)
+            return hydrated
         return build_generation_input_snapshot(
             task=trace.request_log.task,
             query_original=retrieval_plan.query_original if retrieval_plan is not None else "",

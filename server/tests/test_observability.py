@@ -7,7 +7,7 @@ from server.tests.support import create_test_app, dump_result, endpoint_map, mak
 
 
 class ObservabilityTests(unittest.TestCase):
-    def test_minimal_capture_keeps_replay_inputs_and_strips_debug_snapshots(self) -> None:
+    def test_minimal_capture_redacts_raw_query_inputs_and_strips_debug_snapshots(self) -> None:
         from server.app.core import (
             CharRange,
             ChunkMetadataDigest,
@@ -77,8 +77,11 @@ class ObservabilityTests(unittest.TestCase):
         trace = recorder.to_trace_record()
 
         self.assertTrue(trace.generation_log.prompt_hash)
-        self.assertEqual(trace.generation_log.input_snapshot.query_original, "龟防怎么破解？")
+        self.assertEqual(trace.generation_log.input_snapshot.query_original, "")
+        self.assertEqual(trace.generation_log.input_snapshot.query_clean, "")
         self.assertEqual(trace.generation_log.input_snapshot.coach_pending_slot, "opponent_control")
+        self.assertIsNone(trace.generation_log.input_snapshot.profile_summary_snapshot)
+        self.assertEqual(trace.generation_log.input_snapshot.profile_version_id, "profile_seed")
         self.assertIsNone(trace.evidence_log.items[0].excerpt_snapshot)
         self.assertIsNone(trace.generation_log.input_snapshot.frozen_evidence_pack.items[0].excerpt_snapshot)
         self.assertIsNone(trace.generation_log.prompt_snapshot.query_original_preview)
@@ -192,11 +195,65 @@ class ObservabilityTests(unittest.TestCase):
 
             replay_payload = dump_result(routes["/api/replay/{trace_id}"]("trace_seed", ReplayRequest()))
             replay_trace = dump_result(routes["/api/traces/{trace_id}"](replay_payload["trace_id"]))
-
-            self.assertEqual(
-                replay_trace["generation_log"]["input_snapshot"]["profile_summary_snapshot"]["profile_version_id"],
-                "profile_seed",
+            replay_input = app.state.pda.sft_service.resolve_replay_input_snapshot(
+                app.state.pda.trace_store.read_trace("trace_seed"),
+                app.state.pda.current_profile,
             )
-            self.assertEqual(replay_trace["generation_log"]["input_snapshot"]["query_original"], "原始问题")
+
+            self.assertEqual(replay_input.profile_summary_snapshot.profile_version_id, "profile_seed")
+            self.assertEqual(replay_input.query_original, "原始问题")
+            self.assertEqual(replay_trace["generation_log"]["input_snapshot"]["query_original"], "")
             self.assertEqual(replay_trace["generation_log"]["input_snapshot"]["coach_pending_slot"], "opponent_control")
             self.assertTrue(replay_trace["generation_log"]["prompt_hash"])
+
+    def test_replay_rehydrates_redacted_minimal_input_snapshot_from_retrieval_plan(self) -> None:
+        with TemporaryDirectory() as tmp:
+            app = create_test_app(tmp)
+            routes = endpoint_map(app)
+
+            from server.app.api.models import ReplayRequest
+            from server.app.core import ProfileSummary, RuntimeConfigSnapshot, TraceCaptureLevel
+            from server.app.observability import TraceRecorder, build_generation_input_snapshot, build_prompt_snapshot
+
+            seed_trace = make_trace_record(trace_id="trace_minimal_seed")
+            frozen_profile = ProfileSummary(profile_version_id="profile_seed", ruleset_default="Gi")
+            recorder = TraceRecorder(
+                runtime_config_snapshot=RuntimeConfigSnapshot(trace_capture_level=TraceCaptureLevel.MINIMAL),
+                trace_id=seed_trace.trace_id,
+                conversation_id=seed_trace.conversation_id,
+            )
+            recorder.set_request_log(seed_trace.request_log)
+            recorder.set_retrieval_log(seed_trace.retrieval_log)
+            recorder.set_evidence_log(seed_trace.evidence_log)
+            input_snapshot = build_generation_input_snapshot(
+                task=seed_trace.request_log.task,
+                query_original="原始问题",
+                query_clean="原始问题",
+                confirmed_slots=seed_trace.request_log.confirmed_slots,
+                coach_clarify_round=1,
+                coach_pending_slot="opponent_control",
+                profile_summary=frozen_profile,
+                frozen_evidence_pack=seed_trace.evidence_log,
+            )
+            seed_trace.generation_log.input_snapshot = input_snapshot
+            seed_trace.generation_log.prompt_snapshot = build_prompt_snapshot(input_snapshot)
+            recorder.set_generation_log(seed_trace.generation_log)
+            minimal_trace = recorder.to_trace_record()
+            app.state.pda.trace_store.write_trace(minimal_trace)
+            app.state.pda.current_profile = ProfileSummary(profile_version_id="profile_live", ruleset_default="NoGi")
+
+            stored_trace = dump_result(routes["/api/traces/{trace_id}"]("trace_minimal_seed"))
+            self.assertEqual(stored_trace["generation_log"]["input_snapshot"]["query_original"], "")
+            self.assertEqual(stored_trace["generation_log"]["input_snapshot"]["query_clean"], "")
+
+            replay_payload = dump_result(routes["/api/replay/{trace_id}"]("trace_minimal_seed", ReplayRequest()))
+            replay_trace = dump_result(routes["/api/traces/{trace_id}"](replay_payload["trace_id"]))
+            replay_input = app.state.pda.sft_service.resolve_replay_input_snapshot(
+                app.state.pda.trace_store.read_trace("trace_minimal_seed"),
+                app.state.pda.current_profile,
+            )
+
+            self.assertEqual(replay_input.query_original, "turtle escape")
+            self.assertEqual(replay_input.query_clean, "turtle escape")
+            self.assertEqual(replay_input.profile_summary_snapshot.profile_version_id, "profile_seed")
+            self.assertEqual(replay_trace["generation_log"]["input_snapshot"]["query_original"], "")

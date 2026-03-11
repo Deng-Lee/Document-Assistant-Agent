@@ -36,7 +36,7 @@
 | BJJ coach pipeline | `done` | gate、validator、repair/degrade 和输出模式已接通。 | [server/app/agents/bjj_coach](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/app/agents/bjj_coach) |
 | Literary pipeline `top-1 raw_excerpt + top-2/3 safe_summary anchors` | `done` | NOTES 域现已按 spec 生成 top-1 `raw_excerpt` 与 top-2/3 `safe_summary` anchors，并通过 provider-backed generation path 输出文本；`raw_excerpt` 会从持久化 chunk 原文读取并执行注入文本/代码块清洗。 | [IMPLEMENTATION_PLAN.md](/Users/lee/Documents/AI/Document%20Assistant%20Agent/IMPLEMENTATION_PLAN.md#L165), [DEV_SPEC.md](/Users/lee/Documents/AI/Document%20Assistant%20Agent/DEV_SPEC.md#L1690), [server/app/agents/literary/service.py](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/app/agents/literary/service.py), [server/app/agents/literary/provider.py](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/app/agents/literary/provider.py) |
 | Observability: trace/span/event and replay | `done` | 主 trace/replay 能力和 minimal/debug capture 已有。 | [server/app/observability](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/app/observability) |
-| Observability strictness: minimal/debug capture semantics | `partial` | 主体是有的，但 `minimal` 目前仍保留完整 `query_original/query_clean` 等 replay 输入；是否满足 spec 所述“最小化留痕”还偏宽。语义基本可用，但未到完全收口。 | [server/app/observability/recorder.py](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/app/observability/recorder.py#L179) |
+| Observability strictness: minimal/debug capture semantics | `done` | `minimal` 现已只保留结构化 replay 因子与 `safe_summary` 证据，不再在 `generation_log.input_snapshot` 中持久化原始 `query_original/query_clean`；`debug` 仍保留 prompt preview 与 excerpt snapshot。replay 则会从 structural logs 复水缺失 query，因此严格留痕与可回放两者都已收口。 | [server/app/observability/recorder.py](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/app/observability/recorder.py#L179), [server/app/sft/service.py](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/app/sft/service.py#L444), [server/tests/test_observability.py](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/tests/test_observability.py) |
 | Replay override metadata | `done` | `override_generation_config` 现在会真正作用于 replay 的 `runtime_config_snapshot.generation`，并写回 `request_log.override_generation_config` 与 replay trace event，不再只是 request schema 占位。 | [IMPLEMENTATION_PLAN.md](/Users/lee/Documents/AI/Document%20Assistant%20Agent/IMPLEMENTATION_PLAN.md#L259), [server/app/api/models.py](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/app/api/models.py#L25), [server/app/api/app.py](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/app/api/app.py#L338), [server/app/sft/service.py](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/app/sft/service.py) |
 | Evaluation hard metrics | `done` | 主硬指标路径已接通。 | [server/app/evaluation/metrics.py](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/app/evaluation/metrics.py) |
 | Evaluation manual rubric | `done` | 存储、API、聚合结果均已接通。 | [server/app/evaluation/service.py](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/app/evaluation/service.py), [server/app/api/app.py](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/app/api/app.py#L299) |
@@ -65,11 +65,9 @@
 
 以下内容仍未达到 `DEV_SPEC.md` 与 `IMPLEMENTATION_PLAN.md` 要求的完全收口标准，后续必须继续按原方案补齐：
 
-1. Observability strictness
-   `minimal` 采集策略仍保留较完整的 replay 输入，和 spec 所要求的“最小化留痕”还有距离。
-2. SFT readiness in default dev env
+1. SFT readiness in default dev env
    SFT 主链路代码已完成，但默认开发环境未装 `.[training]` 与 adapter inference 依赖；环境 readiness 仍未收口。
-3. Web frontend baseline
+2. Web frontend baseline
    Next.js 主链路已完成，但 `DEV_SPEC.md` 点名的 Tailwind + shadcn/ui 方案仍未严格对齐，不能把当前前端形态视为和原方案完全一致。
 
 ## Implementation Discipline For Next Steps

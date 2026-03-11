@@ -570,7 +570,7 @@ def main() -> None:
         api_trace = _to_dict(api_routes["/api/traces/{trace_id}"](api_chat["trace_id"]))
         assert api_trace["trace_id"] == api_chat["trace_id"]
         assert api_trace["generation_log"]["prompt_hash"]
-        assert api_trace["generation_log"]["input_snapshot"]["query_original"]
+        assert api_trace["generation_log"]["input_snapshot"]["query_original"] == ""
         assert api_trace["generation_log"]["prompt_snapshot"]["query_original_preview"] is None
         api_replay = _to_dict(api_routes["/api/replay/{trace_id}"](api_chat["trace_id"], ReplayRequest()))
         assert api_replay["trace_id"]
