@@ -40,7 +40,7 @@
 | Replay override metadata | `done` | `override_generation_config` 现在会真正作用于 replay 的 `runtime_config_snapshot.generation`，并写回 `request_log.override_generation_config` 与 replay trace event，不再只是 request schema 占位。 | [IMPLEMENTATION_PLAN.md](/Users/lee/Documents/AI/Document%20Assistant%20Agent/IMPLEMENTATION_PLAN.md#L259), [server/app/api/models.py](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/app/api/models.py#L25), [server/app/api/app.py](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/app/api/app.py#L338), [server/app/sft/service.py](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/app/sft/service.py) |
 | Evaluation hard metrics | `done` | 主硬指标路径已接通。 | [server/app/evaluation/metrics.py](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/app/evaluation/metrics.py) |
 | Evaluation manual rubric | `done` | 存储、API、聚合结果均已接通。 | [server/app/evaluation/service.py](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/app/evaluation/service.py), [server/app/api/app.py](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/app/api/app.py#L299) |
-| RAGAS evaluator | `partial` | `real` profile 主路径现已切到真实 RAGAS backend 结构，并按 spec 为 NOTES 优先构造 `top-1 raw_excerpt / top-2/3 safe_summary` contexts；但默认开发环境尚未安装 `ragas/langchain-openai`，因此 readiness 仍是环境层面的未收口。 | [DEV_SPEC.md](/Users/lee/Documents/AI/Document%20Assistant%20Agent/DEV_SPEC.md#L2230), [server/app/evaluation/external_evaluators.py](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/app/evaluation/external_evaluators.py), [pyproject.toml](/Users/lee/Documents/AI/Document%20Assistant%20Agent/pyproject.toml) |
+| RAGAS evaluator | `done` | `real` profile 主路径现已切到真实 RAGAS backend 结构，并按 spec 为 NOTES 优先构造 `top-1 raw_excerpt / top-2/3 safe_summary` contexts；`datasets/langchain-openai/ragas` 也已纳入默认开发环境依赖，不再把真实 RAGAS 主路径压成 `.[evaluation]` 可选安装。现有本地解释器如未重装依赖仍需执行环境同步，但这已不再是 repo manifest 层面的缺口。 | [DEV_SPEC.md](/Users/lee/Documents/AI/Document%20Assistant%20Agent/DEV_SPEC.md#L2230), [server/app/evaluation/external_evaluators.py](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/app/evaluation/external_evaluators.py), [pyproject.toml](/Users/lee/Documents/AI/Document%20Assistant%20Agent/pyproject.toml), [server/tests/test_project_metadata.py](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/tests/test_project_metadata.py) |
 | LLM-as-judge | `partial` | 已有外部 judge API 调用和结构化结果，但还没有按 spec 形成更细的 error tags / 抽样策略 / 评审分层。主方向有了，验收深度未完全到位。 | [DEV_SPEC.md](/Users/lee/Documents/AI/Document%20Assistant%20Agent/DEV_SPEC.md#L2267), [server/app/evaluation/external_evaluators.py](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/app/evaluation/external_evaluators.py#L123) |
 | SFT export / training / policy replay | `done` | 主训练、注册、激活、policy replay/eval 已接通。 | [server/app/sft/service.py](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/app/sft/service.py) |
 | SFT readiness in default dev env | `partial` | 代码路径已具备，但默认开发环境依赖未就绪，这仍是环境层面的未收口。 | [FACTS.md](/Users/lee/Documents/AI/Document%20Assistant%20Agent/FACTS.md), [server/app/api/__main__.py](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/app/api/__main__.py) |
@@ -69,13 +69,11 @@
    仍缺显式失败重试与更完整运维闭环；当前虽然已有 provider、summary metadata 与 rebuild API，但不能视为运维链路完全闭合。
 2. Observability strictness
    `minimal` 采集策略仍保留较完整的 replay 输入，和 spec 所要求的“最小化留痕”还有距离。
-3. RAGAS evaluator
-   真实 backend 结构已接入，但默认开发环境未装 `.[evaluation]`，导致真实评测主路径在默认环境下未完全可执行。
-4. LLM-as-judge
+3. LLM-as-judge
    当前已有 judge 调用与结果结构，但仍缺 spec 中要求的更细 error tags、抽样策略、评审分层。
-5. SFT readiness in default dev env
+4. SFT readiness in default dev env
    SFT 主链路代码已完成，但默认开发环境未装 `.[training]` 与 adapter inference 依赖；环境 readiness 仍未收口。
-6. Web frontend baseline
+5. Web frontend baseline
    Next.js 主链路已完成，但 `DEV_SPEC.md` 点名的 Tailwind + shadcn/ui 方案仍未严格对齐，不能把当前前端形态视为和原方案完全一致。
 
 ## Implementation Discipline For Next Steps

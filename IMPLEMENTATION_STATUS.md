@@ -18,7 +18,7 @@
 | Orchestrator | `done` | probe、plan_check、clarify、fake mock replan、real-profile OpenAI-compatible replan provider、fallback telemetry 已接通 | 无关键断裂点 |
 | Agents | `done` | BJJ coach、NOTES literary 的 `top-1 raw_excerpt + top-2/3 safe_summary` anchors pipeline、validator-safe path 已可运行 | 无关键断裂点 |
 | Observability + Replay | `done` | minimal/debug capture、trace detail、frozen replay 已接通 | 无关键断裂点 |
-| Evaluation | `partial` | golden set、frozen replay、hard metrics、真实 RAGAS backend 结构、OpenAI judge、manual rubric、partial-result flow 已接通 | 默认开发环境尚未安装 `.[evaluation]`，且 judge 的细粒度分层/error tags 仍未完全收口 |
+| Evaluation | `partial` | golden set、frozen replay、hard metrics、真实 RAGAS backend、OpenAI judge、manual rubric、partial-result flow 已接通，RAGAS 运行时依赖已提升为默认开发环境依赖 | judge 的细粒度分层/error tags 仍未完全收口 |
 | SFT | `done` | dataset export、真实 HF LoRA/QLoRA 训练 runner、policy artifact 注册、adapter-backed policy replay/eval 已接通 | 无关键断裂点 |
 | API | `done` | ingest/chat/retrieve/traces/replay/eval/sft/profile/maintenance API 已有 | 无关键断裂点 |
 | Profile Persistence | `done` | SQLite 持久化、启动恢复、history API 已接通 | 无关键断裂点 |
@@ -27,7 +27,7 @@
 
 ## Highest-Priority Remaining Work
 
-1. 在默认开发环境补齐 `.[training]`、`.[evaluation]` 与 adapter inference 依赖，把 SFT / RAGAS readiness 从环境层面的 `False` 收敛到 `True`。
+1. 在默认开发环境补齐 `.[training]` 与 adapter inference 依赖，把 SFT readiness 从环境层面的 `False` 收敛到 `True`。
 2. 继续收口审计清单里剩余的 `partial` 项，尤其是 observability strictness、judge 分层/error tags。
 3. 继续随代码变更维护 `FACTS.md`、`IMPLEMENTATION_STATUS.md` 和 `to_do.md`，避免文档基线再次漂移。
 
