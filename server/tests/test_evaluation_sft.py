@@ -225,7 +225,15 @@ class EvaluationAndSFTTests(unittest.TestCase):
                     runtime_config=runtime_config,
                     api_key="test-key",
                     transport=_StubEvalTransport(
-                        {"choices": [{"message": {"content": '{"passed":true,"score":0.87,"notes":"good"}'}}]}
+                        {
+                            "choices": [
+                                {
+                                    "message": {
+                                        "content": '{"passed":true,"rubric_score":5,"score":0.87,"error_tags":[],"notes":"good"}'
+                                    }
+                                }
+                            ]
+                        }
                     ),
                 ),
             )
@@ -241,11 +249,100 @@ class EvaluationAndSFTTests(unittest.TestCase):
             self.assertEqual(metrics["faithfulness"], 0.91)
             self.assertEqual(metrics["answer_relevancy"], 0.83)
             self.assertEqual(result.judge.details["score"], 0.87)
+            self.assertEqual(result.judge.details["rubric_score_average"], 5.0)
+            self.assertEqual(result.judge.details["sample_strategy"], "stratified_priority_v1")
+            self.assertEqual(result.judge.details["tag_counts"], {})
             status = service.provider_status()
             self.assertEqual(status["ragas"]["evaluator_name"], "ragas_external_v1")
             self.assertTrue(status["ragas"]["configured"])
             self.assertEqual(status["judge"]["evaluator_name"], "openai_judge_v1")
             self.assertTrue(status["judge"]["configured"])
+
+    def test_judge_uses_stratified_sampling_and_aggregates_error_tags(self) -> None:
+        with TemporaryDirectory() as tmp:
+            activate_test_profile("real")
+            trace_store, eval_repo = _build_eval_stack(tmp)
+            validator_fail = make_trace_record(trace_id="trace_validator_fail", validator_pass=False)
+            ambiguous = make_trace_record(trace_id="trace_ambiguous")
+            ambiguous.request_log.confirmed_slots["position"] = "half_guard"
+            ambiguous_output = dict(ambiguous.generation_log.output)
+            ambiguous_output["mode"] = "AMBIGUOUS_FINAL"
+            ambiguous_output["reasoning_status"] = dict(ambiguous_output["reasoning_status"])
+            ambiguous_output["reasoning_status"]["gate_label"] = "AMBIGUOUS"
+            ambiguous.generation_log.output = ambiguous_output
+            turtle_a = make_trace_record(trace_id="trace_turtle_a")
+            turtle_b = make_trace_record(trace_id="trace_turtle_b")
+            mount = make_trace_record(trace_id="trace_mount")
+            mount.request_log.confirmed_slots["position"] = "mount"
+            for trace in (validator_fail, ambiguous, turtle_a, turtle_b, mount):
+                trace_store.write_trace(trace)
+            _write_golden_set(
+                tmp,
+                "judge_sampling_suite",
+                [
+                    {"case_id": "case_validator_fail", "query": "turtle escape", "domain": "BJJ", "trace_id": "trace_validator_fail", "expected_behavior": {"required_mode": "FULL"}, "expected_chunk_ids": ["chunk_1"]},
+                    {"case_id": "case_ambiguous", "query": "turtle escape", "domain": "BJJ", "trace_id": "trace_ambiguous", "expected_behavior": {"required_mode": "AMBIGUOUS_FINAL"}, "expected_chunk_ids": ["chunk_1"]},
+                    {"case_id": "case_turtle_a", "query": "turtle escape", "domain": "BJJ", "trace_id": "trace_turtle_a", "expected_behavior": {"required_mode": "FULL"}, "expected_chunk_ids": ["chunk_1"]},
+                    {"case_id": "case_turtle_b", "query": "turtle escape", "domain": "BJJ", "trace_id": "trace_turtle_b", "expected_behavior": {"required_mode": "FULL"}, "expected_chunk_ids": ["chunk_1"]},
+                    {"case_id": "case_mount", "query": "mount escape", "domain": "BJJ", "trace_id": "trace_mount", "expected_behavior": {"required_mode": "FULL"}, "expected_chunk_ids": ["chunk_1"]},
+                ],
+            )
+
+            from server.app.core import EvalRunRequest, EvalStageResult, EvalStageStatus, build_runtime_config
+            from server.app.evaluation import EvaluationService, OpenAIExternalJudgeEvaluator
+
+            runtime_config = build_runtime_config("real")
+
+            def _judge_response(payload):
+                body = json.loads(payload["messages"][-1]["content"])
+                case_id = body["case_id"]
+                response_map = {
+                    "case_validator_fail": '{"passed":false,"rubric_score":2,"error_tags":["VALIDATOR_FAIL","DRILL_INCOMPLETE"],"notes":"validator mismatch"}',
+                    "case_ambiguous": '{"passed":false,"rubric_score":3,"error_tags":["AMBIGUOUS_MODE_MISMATCH"],"notes":"boundary mismatch"}',
+                    "case_turtle_a": '{"passed":true,"rubric_score":4,"error_tags":[],"notes":"acceptable"}',
+                    "case_turtle_b": '{"passed":true,"rubric_score":5,"error_tags":[],"notes":"strong"}',
+                    "case_mount": '{"passed":true,"rubric_score":5,"error_tags":[],"notes":"not sampled"}',
+                }
+                return {"choices": [{"message": {"content": response_map[case_id]}}]}
+
+            transport = _StubEvalTransport(_judge_response)
+            service = EvaluationService(
+                trace_store=trace_store,
+                golden_case_repository=eval_repo,
+                repo_root=tmp,
+                runtime_config=runtime_config,
+                ragas_runner=lambda cases, traces: EvalStageResult(
+                    status=EvalStageStatus.SKIPPED,
+                    evaluator="ragas_external_v1",
+                    reason="not_under_test",
+                    sample_count=0,
+                ),
+                judge_evaluator=OpenAIExternalJudgeEvaluator(
+                    runtime_config=runtime_config,
+                    api_key="test-key",
+                    transport=transport,
+                    max_sample_cases=3,
+                    frequent_position_top_n=1,
+                ),
+            )
+
+            result = service.run(EvalRunRequest(eval_set_id="judge_sampling_suite"))
+
+            self.assertEqual(result.judge.status.value, "succeeded")
+            self.assertEqual(result.judge.sample_count, 3)
+            self.assertEqual(result.judge.details["eligible_case_count"], 5)
+            self.assertEqual(result.judge.details["omitted_case_count"], 2)
+            self.assertEqual(result.judge.details["strata_counts"]["validator_fail"], 1)
+            self.assertEqual(result.judge.details["strata_counts"]["ambiguous_final"], 1)
+            self.assertEqual(result.judge.details["strata_counts"]["frequent_position"], 2)
+            self.assertEqual(result.judge.details["tag_counts"]["VALIDATOR_FAIL"], 1)
+            self.assertEqual(result.judge.details["tag_counts"]["DRILL_INCOMPLETE"], 1)
+            self.assertEqual(result.judge.details["tag_counts"]["AMBIGUOUS_MODE_MISMATCH"], 1)
+            self.assertEqual(result.judge.details["top_positions"], ["turtle"])
+            self.assertIn("case_validator_fail", result.judge.details["judged_case_ids"])
+            self.assertIn("case_ambiguous", result.judge.details["judged_case_ids"])
+            self.assertEqual(len(transport.calls), 3)
+            self.assertNotIn("case_mount", result.judge.details["judged_case_ids"])
 
     def test_evaluation_real_profile_provider_unavailable_marks_run_partial(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -627,6 +724,8 @@ class _StubEvalTransport:
 
     def create_chat_completion(self, payload):
         self.calls.append(payload)
+        if callable(self.response):
+            return self.response(payload)
         return self.response
 
 

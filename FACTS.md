@@ -83,6 +83,7 @@
   - frozen replay eval
   - hard metrics
   - `real` profile 下的真实 RAGAS backend + OpenAI judge external evaluator，RAGAS 运行时依赖已纳入默认开发环境
+  - judge 的结构化 `rubric_score + error_tags`、分层抽样（validator fail / `AMBIGUOUS_FINAL` / 高频 position）与聚合统计
   - manual rubric storage + API + aggregated eval results
   - partial-result handling
 - SFT 已支持：

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from pydantic import Field, ValidationError
+from pydantic import Field, ValidationError, root_validator, validator
 
 from server.app.core import (
     EvalMetricName,
@@ -48,8 +49,24 @@ class RagasCaseScores(PDABaseModel):
 
 class JudgeCaseScore(PDABaseModel):
     passed: bool
-    score: float = Field(..., ge=0.0, le=1.0)
+    score: float | None = Field(default=None, ge=0.0, le=1.0)
+    rubric_score: int = Field(..., ge=1, le=5)
+    error_tags: list[str] = Field(default_factory=list)
     notes: str | None = None
+
+    @validator("error_tags", each_item=True)
+    def _validate_error_tags(cls, value: str) -> str:
+        if value not in ALLOWED_JUDGE_ERROR_TAGS:
+            raise ValueError(f"invalid_error_tag:{value}")
+        return value
+
+    @root_validator
+    def _normalize_score(cls, values: dict[str, Any]) -> dict[str, Any]:
+        score = values.get("score")
+        rubric_score = values.get("rubric_score")
+        if score is None and rubric_score is not None:
+            values["score"] = round(float(rubric_score) / 5.0, 4)
+        return values
 
 
 @dataclass
@@ -61,6 +78,23 @@ class RagasEvaluationCase:
     ground_truth: str
     domain: str
     trace_id: str
+
+
+@dataclass
+class JudgeEvaluationCase:
+    case_id: str
+    trace_id: str
+    payload: dict[str, Any]
+    strata: list[str]
+    position: str | None
+
+
+@dataclass
+class JudgeSamplingPlan:
+    eligible_case_count: int
+    selected_cases: list[JudgeEvaluationCase]
+    strata_counts: dict[str, int]
+    top_positions: list[str]
 
 
 class RagasBackend(Protocol):
@@ -221,9 +255,13 @@ class OpenAIExternalJudgeEvaluator:
         runtime_config: RuntimeConfigSnapshot,
         api_key: str | None = None,
         transport: ChatCompletionTransport | None = None,
+        max_sample_cases: int = 12,
+        frequent_position_top_n: int = 3,
     ):
         self.runtime_config = runtime_config
         self.api_key = resolve_openai_api_key(api_key)
+        self.max_sample_cases = max_sample_cases
+        self.frequent_position_top_n = frequent_position_top_n
         self.transport = transport or (
             OpenAIChatCompletionTransport(
                 api_key=self.api_key,
@@ -241,36 +279,76 @@ class OpenAIExternalJudgeEvaluator:
         if not self.api_key or self.transport is None:
             raise ExternalEvaluatorUnavailableError("missing_openai_api_key")
         trace_by_id = {trace.trace_id: trace for trace in traces}
+        eligible_cases = [
+            _build_judge_case(case, trace_by_id[case.trace_id])
+            for case in golden_cases
+            if case.trace_id and case.trace_id in trace_by_id
+        ]
+        if not eligible_cases:
+            return EvalStageResult(
+                status=EvalStageStatus.SKIPPED,
+                evaluator=self.evaluator_name,
+                reason="no_matching_cases",
+                sample_count=0,
+            )
+        sampling_plan = _build_judge_sampling_plan(
+            eligible_cases=eligible_cases,
+            max_sample_cases=self.max_sample_cases,
+            frequent_position_top_n=self.frequent_position_top_n,
+        )
         results: list[JudgeCaseScore] = []
-        judged = 0
-        for case in golden_cases:
-            trace = trace_by_id.get(case.trace_id or "")
-            if trace is None:
-                continue
-            judged += 1
-            results.append(self._evaluate_case(case, trace))
+        case_results: list[dict[str, Any]] = []
+        for evaluation_case in sampling_plan.selected_cases:
+            case_result = self._evaluate_case(evaluation_case)
+            results.append(case_result)
+            case_results.append(
+                {
+                    "case_id": evaluation_case.case_id,
+                    "trace_id": evaluation_case.trace_id,
+                    "strata": evaluation_case.strata,
+                    "position": evaluation_case.position,
+                    "passed": case_result.passed,
+                    "score": case_result.score,
+                    "rubric_score": case_result.rubric_score,
+                    "error_tags": case_result.error_tags,
+                    "notes": case_result.notes,
+                }
+            )
+        judged = len(sampling_plan.selected_cases)
         passed = sum(1 for item in results if item.passed)
         average_score = _mean(item.score for item in results)
+        average_rubric_score = _mean(item.rubric_score for item in results)
+        tag_counts = Counter(tag for item in results for tag in item.error_tags)
         return EvalStageResult(
             status=EvalStageStatus.SUCCEEDED,
             evaluator=self.evaluator_name,
             sample_count=judged,
             details={
                 "model": self.runtime_config.model_routing.base_model,
-                "prompt_version": "eval_judge.v1",
+                "prompt_version": "eval_judge.v2",
                 "passed": passed,
                 "failed": max(judged - passed, 0),
                 "score": average_score,
+                "rubric_score_average": average_rubric_score,
+                "tag_counts": dict(sorted(tag_counts.items())),
+                "sample_strategy": "stratified_priority_v1",
+                "sampled_case_count": judged,
+                "eligible_case_count": sampling_plan.eligible_case_count,
+                "omitted_case_count": max(sampling_plan.eligible_case_count - judged, 0),
+                "strata_counts": sampling_plan.strata_counts,
+                "top_positions": sampling_plan.top_positions,
+                "judged_case_ids": [case.case_id for case in sampling_plan.selected_cases],
+                "judged_trace_ids": [case.trace_id for case in sampling_plan.selected_cases],
+                "case_results": case_results,
             },
         )
 
-    def _evaluate_case(self, golden_case: GoldenCase, trace: TraceRecord) -> JudgeCaseScore:
-        payload = _build_case_payload(golden_case, trace)
+    def _evaluate_case(self, evaluation_case: JudgeEvaluationCase) -> JudgeCaseScore:
         response = _chat_json_request(
             transport=self.transport,
             model=self.runtime_config.model_routing.base_model,
             prompt=_judge_prompt(),
-            payload=payload,
+            payload=evaluation_case.payload,
             generation_config=self.runtime_config.generation.replan,
         )
         try:
@@ -341,7 +419,78 @@ def _build_case_payload(golden_case: GoldenCase, trace: TraceRecord) -> dict[str
             if trace.generation_log.validator_report is not None
             else None
         ),
+        "answer_mode": output.get("mode"),
+        "gate_label": output.get("reasoning_status", {}).get("gate_label") if isinstance(output, dict) else None,
+        "position": _trace_position(trace),
     }
+
+
+def _build_judge_case(golden_case: GoldenCase, trace: TraceRecord) -> JudgeEvaluationCase:
+    position = _trace_position(trace)
+    return JudgeEvaluationCase(
+        case_id=golden_case.case_id,
+        trace_id=trace.trace_id,
+        payload=_build_case_payload(golden_case, trace),
+        strata=_judge_case_strata(trace),
+        position=position,
+    )
+
+
+def _build_judge_sampling_plan(
+    *,
+    eligible_cases: list[JudgeEvaluationCase],
+    max_sample_cases: int,
+    frequent_position_top_n: int,
+) -> JudgeSamplingPlan:
+    position_counts = Counter(
+        case.position.strip().lower()
+        for case in eligible_cases
+        if isinstance(case.position, str) and case.position.strip()
+    )
+    top_positions = [
+        position
+        for position, _count in sorted(
+            position_counts.items(),
+            key=lambda item: (-item[1], item[0]),
+        )[:frequent_position_top_n]
+    ]
+    enriched_cases = [
+        JudgeEvaluationCase(
+            case_id=case.case_id,
+            trace_id=case.trace_id,
+            payload=case.payload,
+            strata=_merge_case_strata(case.strata, case.position, top_positions),
+            position=case.position,
+        )
+        for case in eligible_cases
+    ]
+    selected: list[JudgeEvaluationCase] = []
+    selected_ids: set[str] = set()
+    for stratum in ("validator_fail", "ambiguous_final", "frequent_position"):
+        for case in _sorted_judge_cases(enriched_cases):
+            if case.case_id in selected_ids or stratum not in case.strata:
+                continue
+            selected.append(case)
+            selected_ids.add(case.case_id)
+            if len(selected) >= max_sample_cases:
+                break
+        if len(selected) >= max_sample_cases:
+            break
+    if len(selected) < min(max_sample_cases, len(enriched_cases)):
+        for case in _sorted_judge_cases(enriched_cases):
+            if case.case_id in selected_ids:
+                continue
+            selected.append(case)
+            selected_ids.add(case.case_id)
+            if len(selected) >= max_sample_cases:
+                break
+    strata_counts = Counter(stratum for case in selected for stratum in case.strata)
+    return JudgeSamplingPlan(
+        eligible_case_count=len(enriched_cases),
+        selected_cases=selected,
+        strata_counts=dict(sorted(strata_counts.items())),
+        top_positions=top_positions,
+    )
 
 
 def _build_ragas_contexts(golden_case: GoldenCase, trace: TraceRecord) -> list[str]:
@@ -419,8 +568,12 @@ def _render_output_text(output: dict[str, Any]) -> str:
 def _judge_prompt() -> str:
     return (
         "You are an external judge for retrieval-grounded answers. "
-        "Return one JSON object with keys passed (boolean), score (float in [0,1]), and optional notes. "
-        "Judge whether the answer satisfies the expected behavior using the query, answer text, citations, contexts, and validator status."
+        "Return one JSON object with keys passed (boolean), rubric_score (integer 1-5), error_tags (array of strings), "
+        "optional score (float in [0,1]), and optional notes. "
+        "Allowed error_tags are: NO_EVIDENCE, PLAN_SKIN_SWAP, DRILL_INCOMPLETE, ASKS_QUESTION_WHEN_FORBIDDEN, "
+        "AMBIGUOUS_MODE_MISMATCH, LOW_EVIDENCE_UNSAFE, CITATION_MISMATCH, VALIDATOR_FAIL. "
+        "Judge whether the answer satisfies the expected behavior using the query, answer text, citations, contexts, "
+        "answer_mode, gate_label, position, and validator status."
     )
 
 
@@ -445,3 +598,61 @@ def _extract_ragas_row(result: Any) -> dict[str, Any]:
 def _mean(values: Any) -> float:
     collected = list(values)
     return sum(collected) / len(collected) if collected else 0.0
+
+
+def _trace_position(trace: TraceRecord) -> str | None:
+    from_slots = trace.request_log.confirmed_slots.get("position")
+    if from_slots:
+        return str(from_slots)
+    retrieval_plan = trace.retrieval_log.retrieval_plan
+    if retrieval_plan is not None and retrieval_plan.filters.position:
+        return str(retrieval_plan.filters.position)
+    for item in trace.evidence_log.items:
+        if item.metadata_digest.position:
+            return item.metadata_digest.position
+    return None
+
+
+def _judge_case_strata(trace: TraceRecord) -> list[str]:
+    strata: list[str] = []
+    validator_report = trace.generation_log.validator_report
+    if validator_report is not None and not validator_report.validator_pass:
+        strata.append("validator_fail")
+    output = trace.generation_log.output or {}
+    if output.get("mode") == "AMBIGUOUS_FINAL" or output.get("reasoning_status", {}).get("gate_label") == "AMBIGUOUS":
+        strata.append("ambiguous_final")
+    return strata
+
+
+def _merge_case_strata(base_strata: list[str], position: str | None, top_positions: list[str]) -> list[str]:
+    merged = list(base_strata)
+    if isinstance(position, str) and position.strip().lower() in top_positions and "frequent_position" not in merged:
+        merged.append("frequent_position")
+    if not merged:
+        merged.append("general")
+    return merged
+
+
+def _sorted_judge_cases(cases: list[JudgeEvaluationCase]) -> list[JudgeEvaluationCase]:
+    def _priority(case: JudgeEvaluationCase) -> tuple[int, int, int, str]:
+        strata = set(case.strata)
+        return (
+            0 if "validator_fail" in strata else 1,
+            0 if "ambiguous_final" in strata else 1,
+            0 if "frequent_position" in strata else 1,
+            case.case_id,
+        )
+
+    return sorted(cases, key=_priority)
+
+
+ALLOWED_JUDGE_ERROR_TAGS = {
+    "NO_EVIDENCE",
+    "PLAN_SKIN_SWAP",
+    "DRILL_INCOMPLETE",
+    "ASKS_QUESTION_WHEN_FORBIDDEN",
+    "AMBIGUOUS_MODE_MISMATCH",
+    "LOW_EVIDENCE_UNSAFE",
+    "CITATION_MISMATCH",
+    "VALIDATOR_FAIL",
+}
