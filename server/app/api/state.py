@@ -105,7 +105,10 @@ def create_app_state(root_dir: str | Path) -> AppState:
         current_profile = persisted_profile
     runtime_config.profile_version_id = current_profile.profile_version_id
     bjj_coach_service = BJJCoachService(runtime_config=runtime_config)
-    literary_service = LiteraryService()
+    literary_service = LiteraryService(
+        document_repository=document_repository,
+        runtime_config=runtime_config,
+    )
     app_state = AppState(
         root_dir=root,
         storage_paths=storage_paths,

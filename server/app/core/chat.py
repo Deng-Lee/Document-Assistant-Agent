@@ -20,10 +20,13 @@ class ClarifyRequest(PDABaseModel):
 
 
 class LiteraryAnchor(PDABaseModel):
+    anchor_type: Literal["raw_excerpt", "safe_summary"]
+    doc_rank: int
     evidence_id: str
     doc_version_id: str
     locator: SourceLocator
     citation: str
+    content: str
     heading_path: list[str] = Field(default_factory=list)
 
 

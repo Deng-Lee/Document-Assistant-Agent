@@ -69,7 +69,7 @@
   - deterministic fallback telemetry
 - Agents 已支持：
   - BJJ coach
-  - literary agent
+  - literary agent（top-1 `raw_excerpt` + top-2/3 `safe_summary` anchors，provider-backed generation）
   - validator-safe generation path
 - Observability 已支持：
   - structured trace/span/event

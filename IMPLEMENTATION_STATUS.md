@@ -16,7 +16,7 @@
 | Ingestion + safe_summary | `partial` | text/file/dir/record ingest、provider-backed safe_summary job、summary metadata、rebuild API 已接通 | 显式失败重试与完整 maintenance 闭环仍未完全收口 |
 | Retrieval + Evidence Pack | `done` | structured + BM25 + dense + RRF + optional cross-encoder rerank + Evidence Pack 已接通 | 无关键断裂点 |
 | Orchestrator | `done` | probe、plan_check、clarify、fake mock replan、real-profile OpenAI-compatible replan provider、fallback telemetry 已接通 | 无关键断裂点 |
-| Agents | `done` | BJJ coach、literary、validator-safe path 已可运行 | 无关键断裂点 |
+| Agents | `done` | BJJ coach、NOTES literary 的 `top-1 raw_excerpt + top-2/3 safe_summary` anchors pipeline、validator-safe path 已可运行 | 无关键断裂点 |
 | Observability + Replay | `done` | minimal/debug capture、trace detail、frozen replay 已接通 | 无关键断裂点 |
 | Evaluation | `done` | golden set、frozen replay、hard metrics、OpenAI-compatible external RAGAS/judge、manual rubric、partial-result flow 已接通 | 无关键断裂点 |
 | SFT | `done` | dataset export、真实 HF LoRA/QLoRA 训练 runner、policy artifact 注册、adapter-backed policy replay/eval 已接通 | 无关键断裂点 |

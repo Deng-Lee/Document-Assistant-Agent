@@ -2018,9 +2018,25 @@ export const apiContracts = {
         "additionalProperties": false,
         "description": "Shared model base so all contracts behave consistently.",
         "properties": {
+          "anchor_type": {
+            "enum": [
+              "raw_excerpt",
+              "safe_summary"
+            ],
+            "title": "Anchor Type",
+            "type": "string"
+          },
           "citation": {
             "title": "Citation",
             "type": "string"
+          },
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "doc_rank": {
+            "title": "Doc Rank",
+            "type": "integer"
           },
           "doc_version_id": {
             "title": "Doc Version Id",
@@ -2042,10 +2058,13 @@ export const apiContracts = {
           }
         },
         "required": [
+          "anchor_type",
+          "doc_rank",
           "evidence_id",
           "doc_version_id",
           "locator",
-          "citation"
+          "citation",
+          "content"
         ],
         "title": "LiteraryAnchor",
         "type": "object"
@@ -2873,9 +2892,25 @@ export const apiContracts = {
         "additionalProperties": false,
         "description": "Shared model base so all contracts behave consistently.",
         "properties": {
+          "anchor_type": {
+            "enum": [
+              "raw_excerpt",
+              "safe_summary"
+            ],
+            "title": "Anchor Type",
+            "type": "string"
+          },
           "citation": {
             "title": "Citation",
             "type": "string"
+          },
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "doc_rank": {
+            "title": "Doc Rank",
+            "type": "integer"
           },
           "doc_version_id": {
             "title": "Doc Version Id",
@@ -2897,10 +2932,13 @@ export const apiContracts = {
           }
         },
         "required": [
+          "anchor_type",
+          "doc_rank",
           "evidence_id",
           "doc_version_id",
           "locator",
-          "citation"
+          "citation",
+          "content"
         ],
         "title": "LiteraryAnchor",
         "type": "object"
@@ -5672,9 +5710,25 @@ export const apiContracts = {
         "additionalProperties": false,
         "description": "Shared model base so all contracts behave consistently.",
         "properties": {
+          "anchor_type": {
+            "enum": [
+              "raw_excerpt",
+              "safe_summary"
+            ],
+            "title": "Anchor Type",
+            "type": "string"
+          },
           "citation": {
             "title": "Citation",
             "type": "string"
+          },
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "doc_rank": {
+            "title": "Doc Rank",
+            "type": "integer"
           },
           "doc_version_id": {
             "title": "Doc Version Id",
@@ -5696,10 +5750,13 @@ export const apiContracts = {
           }
         },
         "required": [
+          "anchor_type",
+          "doc_rank",
           "evidence_id",
           "doc_version_id",
           "locator",
-          "citation"
+          "citation",
+          "content"
         ],
         "title": "LiteraryAnchor",
         "type": "object"
@@ -7119,9 +7176,25 @@ export const apiContracts = {
         "additionalProperties": false,
         "description": "Shared model base so all contracts behave consistently.",
         "properties": {
+          "anchor_type": {
+            "enum": [
+              "raw_excerpt",
+              "safe_summary"
+            ],
+            "title": "Anchor Type",
+            "type": "string"
+          },
           "citation": {
             "title": "Citation",
             "type": "string"
+          },
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "doc_rank": {
+            "title": "Doc Rank",
+            "type": "integer"
           },
           "doc_version_id": {
             "title": "Doc Version Id",
@@ -7143,10 +7216,13 @@ export const apiContracts = {
           }
         },
         "required": [
+          "anchor_type",
+          "doc_rank",
           "evidence_id",
           "doc_version_id",
           "locator",
-          "citation"
+          "citation",
+          "content"
         ],
         "title": "LiteraryAnchor",
         "type": "object"
