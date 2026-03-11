@@ -14,7 +14,7 @@
 | Core Contracts & Schemas | `done` | core schema、runtime config、trace/eval/sft contracts 已落地 | 无关键断裂点 |
 | Storage Adapters | `done` | SQLite、FTS5、filestore、trace store、jobs、profiles、真实 Chroma 已接通 | 无关键断裂点 |
 | Ingestion + safe_summary | `partial` | text/file/dir/record ingest、provider-backed safe_summary job、summary metadata、rebuild API 已接通 | 显式失败重试与完整 maintenance 闭环仍未完全收口 |
-| Retrieval + Evidence Pack | `partial` | structured + BM25 + dense + RRF + Evidence Pack 已接通，`real` profile 的主 rerank 路径已换成真实 HF cross-encoder backend | 默认开发环境尚未安装 rerank 所需 `torch/transformers`，cross-encoder readiness 仍是环境层面的缺口 |
+| Retrieval + Evidence Pack | `done` | structured + BM25 + dense + RRF + Evidence Pack 已接通，`real` profile 的主 rerank 路径已换成真实 HF cross-encoder backend，且 rerank 运行时依赖已提升为默认开发环境依赖 | 无关键断裂点 |
 | Orchestrator | `done` | probe、plan_check、clarify、fake mock replan、real-profile OpenAI-compatible replan provider、fallback telemetry 已接通 | 无关键断裂点 |
 | Agents | `done` | BJJ coach、NOTES literary 的 `top-1 raw_excerpt + top-2/3 safe_summary` anchors pipeline、validator-safe path 已可运行 | 无关键断裂点 |
 | Observability + Replay | `done` | minimal/debug capture、trace detail、frozen replay 已接通 | 无关键断裂点 |
@@ -27,8 +27,8 @@
 
 ## Highest-Priority Remaining Work
 
-1. 在默认开发环境补齐 `.[training]`、`.[rerank]`、`.[evaluation]` 与 adapter inference 依赖，把 SFT / cross-encoder / RAGAS readiness 从环境层面的 `False` 收敛到 `True`。
-2. 继续收口审计清单里剩余的 `partial` 项，尤其是 maintenance API、replay override metadata、judge 分层/error tags。
+1. 在默认开发环境补齐 `.[training]`、`.[evaluation]` 与 adapter inference 依赖，把 SFT / RAGAS readiness 从环境层面的 `False` 收敛到 `True`。
+2. 继续收口审计清单里剩余的 `partial` 项，尤其是 observability strictness、judge 分层/error tags。
 3. 继续随代码变更维护 `FACTS.md`、`IMPLEMENTATION_STATUS.md` 和 `to_do.md`，避免文档基线再次漂移。
 
 ## Notes

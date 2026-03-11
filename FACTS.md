@@ -59,7 +59,7 @@
   - BM25(FTS5)
   - Dense(Chroma)
   - RRF fusion
-  - optional cross-encoder rerank（fake profile deterministic mock / real profile 本地 HF cross-encoder backend）
+  - optional cross-encoder rerank（fake profile deterministic mock / real profile 本地 HF cross-encoder backend，运行时依赖已纳入默认开发环境）
   - Evidence Pack 组装
 - Orchestrator 已支持：
   - probe
@@ -108,7 +108,6 @@
   - chat SSE/streaming 已接通
   - Playwright 浏览器级端到端回归已接入
 - 当前剩余主要是环境与文档层面的持续维护：
-  - 默认开发环境仍未预装 `.[rerank]`
   - 默认开发环境仍未预装 `.[evaluation]`
   - 默认开发环境仍未预装 `.[training]` 与 adapter inference 依赖
   - `FACTS.md` / `IMPLEMENTATION_STATUS.md` / `to_do.md` 仍需随实现持续同步
@@ -123,8 +122,9 @@
 - 真实 LoRA/QLoRA 训练依赖当前默认开发环境未内置：
   - 需要额外安装 `.[training]`（`torch`、`transformers`、`peft`、`accelerate`、`datasets`）
   - `bitsandbytes` 仅在需要 4-bit QLoRA 时额外安装
-- 真实 HF cross-encoder rerank 依赖当前默认开发环境未内置：
-  - 需要额外安装 `.[rerank]`（`torch`、`transformers`）
+- 真实 HF cross-encoder rerank 运行时依赖已纳入默认开发环境清单：
+  - `torch`
+  - `transformers`
 - 真实 RAGAS backend 依赖当前默认开发环境未内置：
   - 需要额外安装 `.[evaluation]`（`ragas`、`datasets`、`langchain-openai`）
 

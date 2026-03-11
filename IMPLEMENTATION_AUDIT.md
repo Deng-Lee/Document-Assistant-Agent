@@ -31,7 +31,7 @@
 | `safe_summary` job orchestration | `partial` | 真实 summary provider、`summary_model` / `summary_prompt_version` / `summary_status` / `summary_error_code`、以及 rebuild API 已接上，不再是纯 fallback 占位；但 spec 里要求的显式失败重试与更完整运维闭环还未完全收口。 | [DEV_SPEC.md](/Users/lee/Documents/AI/Document%20Assistant%20Agent/DEV_SPEC.md#L367), [server/app/jobs/service.py](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/app/jobs/service.py#L76), [server/app/jobs/safe_summary_provider.py](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/app/jobs/safe_summary_provider.py), [server/app/api/app.py](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/app/api/app.py#L260) |
 | Maintenance APIs: `safe_summary/rebuild`, `maintenance/reindex`, `maintenance/reembed` | `done` | 专门 API 入口、`doc_version_id | doc_id | all` scope、reindex flags、reembed `embedding_version_id` 与 dry-run 均已接通；reembed 也已按目标 `embedding_version_id` 保留旧版本隔离。 | [DEV_SPEC.md](/Users/lee/Documents/AI/Document%20Assistant%20Agent/DEV_SPEC.md#L1937), [DEV_SPEC.md](/Users/lee/Documents/AI/Document%20Assistant%20Agent/DEV_SPEC.md#L1944), [server/app/api/app.py](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/app/api/app.py), [server/app/jobs/service.py](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/app/jobs/service.py) |
 | Retrieval mainline: structured + BM25 + dense + RRF | `done` | 主 hybrid retrieval 方案已落地。 | [server/app/retrieval/service.py](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/app/retrieval/service.py) |
-| Cross-encoder reranker | `partial` | `real` profile 主路径现已切到本地 Hugging Face cross-encoder backend，不再是 chat scorer proxy；但默认开发环境尚未安装 `torch/transformers`，因此 readiness 仍是环境层面的未收口。 | [server/app/retrieval/reranker.py](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/app/retrieval/reranker.py), [config/model_profiles/real.json](/Users/lee/Documents/AI/Document%20Assistant%20Agent/config/model_profiles/real.json), [pyproject.toml](/Users/lee/Documents/AI/Document%20Assistant%20Agent/pyproject.toml) |
+| Cross-encoder reranker | `done` | `real` profile 主路径现已切到本地 Hugging Face cross-encoder backend，且 `torch/transformers` 已提升为默认开发环境依赖，不再把 cross-encoder 主路径压成 `.[rerank]` 可选安装。现有本地解释器如未重装依赖仍需执行环境同步，但这已不再是 repo manifest 层面的缺口。 | [server/app/retrieval/reranker.py](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/app/retrieval/reranker.py), [config/model_profiles/real.json](/Users/lee/Documents/AI/Document%20Assistant%20Agent/config/model_profiles/real.json), [pyproject.toml](/Users/lee/Documents/AI/Document%20Assistant%20Agent/pyproject.toml), [server/tests/test_project_metadata.py](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/tests/test_project_metadata.py) |
 | Orchestrator: probe / plan_check / clarify / one-shot replan | `done` | 主执行链与 fake/real 两条路径都已接入，且有 fallback telemetry。 | [server/app/orchestrator](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/app/orchestrator) |
 | BJJ coach pipeline | `done` | gate、validator、repair/degrade 和输出模式已接通。 | [server/app/agents/bjj_coach](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/app/agents/bjj_coach) |
 | Literary pipeline `top-1 raw_excerpt + top-2/3 safe_summary anchors` | `done` | NOTES 域现已按 spec 生成 top-1 `raw_excerpt` 与 top-2/3 `safe_summary` anchors，并通过 provider-backed generation path 输出文本；`raw_excerpt` 会从持久化 chunk 原文读取并执行注入文本/代码块清洗。 | [IMPLEMENTATION_PLAN.md](/Users/lee/Documents/AI/Document%20Assistant%20Agent/IMPLEMENTATION_PLAN.md#L165), [DEV_SPEC.md](/Users/lee/Documents/AI/Document%20Assistant%20Agent/DEV_SPEC.md#L1690), [server/app/agents/literary/service.py](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/app/agents/literary/service.py), [server/app/agents/literary/provider.py](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/app/agents/literary/provider.py) |
@@ -50,7 +50,7 @@
 
 ## Summary
 
-当前仓库并不是“还有一点点文档没同步”这么简单，而是存在三类差异：
+当前仓库的主链路已经大面积收口，但审计视角下仍需区分三类状态：
 
 1. `done`
    主链路真实落地，且具备入口和验证。
@@ -59,11 +59,30 @@
 3. `drift`
    代码用替代实现取代了原定方案，或者 canonical 文档本身已经失真。
 
+截至当前版本，本清单中的原 `drift` 项已全部被处理并重新标记；当前剩余未收口项均为 `partial`，不得因为“已有 fallback / readiness check / 局部入口”而上调为 `done`。
+
+## Remaining Work
+
+以下内容仍未达到 `DEV_SPEC.md` 与 `IMPLEMENTATION_PLAN.md` 要求的完全收口标准，后续必须继续按原方案补齐：
+
+1. `safe_summary` job orchestration
+   仍缺显式失败重试与更完整运维闭环；当前虽然已有 provider、summary metadata 与 rebuild API，但不能视为运维链路完全闭合。
+2. Observability strictness
+   `minimal` 采集策略仍保留较完整的 replay 输入，和 spec 所要求的“最小化留痕”还有距离。
+3. RAGAS evaluator
+   真实 backend 结构已接入，但默认开发环境未装 `.[evaluation]`，导致真实评测主路径在默认环境下未完全可执行。
+4. LLM-as-judge
+   当前已有 judge 调用与结果结构，但仍缺 spec 中要求的更细 error tags、抽样策略、评审分层。
+5. SFT readiness in default dev env
+   SFT 主链路代码已完成，但默认开发环境未装 `.[training]` 与 adapter inference 依赖；环境 readiness 仍未收口。
+6. Web frontend baseline
+   Next.js 主链路已完成，但 `DEV_SPEC.md` 点名的 Tailwind + shadcn/ui 方案仍未严格对齐，不能把当前前端形态视为和原方案完全一致。
+
 ## Implementation Discipline For Next Steps
 
 后续修复时必须遵守：
 
-1. 先修 `drift`，再谈新增能力。
+1. 当前如无新增 `drift`，优先收口现有 `partial`；一旦出现新的 `drift`，必须先恢复 spec 原语义，再谈新增能力。
 2. 修复时必须优先恢复 spec 原语义，不允许继续用 `proxy/mock/fallback` 充当主功能。
 3. 任何功能如果没有真正的 API / runtime / UI / job 入口，就不能标 `done`。
 4. 任何功能如果只有 request schema，没有执行语义，也不能标 `done`。
