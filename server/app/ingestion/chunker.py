@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from hashlib import sha1
 
-from server.app.core import ChunkMetadataDigest, ChunkRecord, ChunkType, DocVersionRecord, SourceLocator
+from server.app.core import ChunkMetadataDigest, ChunkRecord, ChunkType, DocVersionRecord, SourceLocator, SummaryStatus
 
 from .types import LoadedMarkdown, ParsedDocument
 
@@ -38,9 +38,11 @@ def build_chunk_records(loaded: LoadedMarkdown, parsed: ParsedDocument, doc_id: 
                         goal=record.fields.goal,
                         opponent_control=record.fields.opponent_control,
                     ),
-                    safe_summary=build_safe_summary_fallback(clean_search_text),
+                    safe_summary="",
+                    summary_status=SummaryStatus.PENDING,
                     clean_search_text=clean_search_text,
                     clean_embed_text=clean_embed_text,
+                    raw_text_ref=raw_text,
                 )
             )
     else:
@@ -63,9 +65,11 @@ def build_chunk_records(loaded: LoadedMarkdown, parsed: ParsedDocument, doc_id: 
                     chunk_type=ChunkType.NOTES_SECTION,
                     locator=locator,
                     metadata_digest=ChunkMetadataDigest(heading_path=note_chunk.heading_path),
-                    safe_summary=build_safe_summary_fallback(clean_search_text),
+                    safe_summary="",
+                    summary_status=SummaryStatus.PENDING,
                     clean_search_text=clean_search_text,
                     clean_embed_text=clean_embed_text,
+                    raw_text_ref=note_chunk.text,
                 )
             )
     return chunks

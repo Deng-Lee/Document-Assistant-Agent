@@ -27,8 +27,47 @@ class JobServiceTests(unittest.TestCase):
             result = job_service.run_job(queued.job_id)
 
             self.assertEqual(result.job.status.value, "succeeded")
-            self.assertTrue(repo.get_chunk(chunk.chunk_id).safe_summary)
+            updated = repo.get_chunk(chunk.chunk_id)
+            self.assertTrue(updated.safe_summary)
+            self.assertEqual(updated.summary_status.value, "built")
+            self.assertEqual(updated.summary_prompt_version, "safe_summary.v1")
+            self.assertTrue(updated.summary_model)
             self.assertEqual(job_repo.get_job(queued.job_id).status.value, "succeeded")
+
+    def test_safe_summary_job_marks_fallback_on_provider_error(self) -> None:
+        with TemporaryDirectory() as tmp:
+            repo, job_repo, _job_service, chunk = _build_job_stack(tmp)
+
+            from server.app.jobs import JobService
+            from server.app.jobs.safe_summary_provider import SafeSummaryProviderError
+
+            class _FailingProvider:
+                provider_name = "failing-summary-provider"
+                model_name = "failing-model"
+                is_ready = True
+
+                def summarize(self, request):
+                    raise SafeSummaryProviderError("synthetic_failure")
+
+            job_service = JobService(repo, job_repo, safe_summary_provider=_FailingProvider())
+            queued = job_service.enqueue(
+                "safe_summary_build",
+                {
+                    "chunk_id": chunk.chunk_id,
+                    "doc_version_id": chunk.doc_version_id,
+                    "summary_prompt_version": "safe_summary.v1",
+                    "summary_model": "test-summary-model",
+                },
+            )
+
+            result = job_service.run_job(queued.job_id)
+
+            self.assertEqual(result.job.status.value, "succeeded")
+            updated = repo.get_chunk(chunk.chunk_id)
+            self.assertEqual(updated.summary_status.value, "fallback")
+            self.assertEqual(updated.summary_error_code, "synthetic_failure")
+            self.assertEqual(updated.summary_model, "test-summary-model")
+            self.assertTrue(updated.safe_summary)
 
     def test_reindex_and_reembed_jobs_complete(self) -> None:
         with TemporaryDirectory() as tmp:

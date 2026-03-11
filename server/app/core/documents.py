@@ -5,7 +5,7 @@ from datetime import date, datetime
 from pydantic import Field
 
 from .base import PDABaseModel
-from .enums import ChunkType, Distance, DocumentType, OpponentControl, Orientation
+from .enums import ChunkType, Distance, DocumentType, OpponentControl, Orientation, SummaryStatus
 from .locators import SourceLocator
 
 
@@ -60,6 +60,10 @@ class ChunkRecord(PDABaseModel):
     locator: SourceLocator
     metadata_digest: ChunkMetadataDigest
     safe_summary: str | None = None
+    summary_model: str | None = None
+    summary_prompt_version: str | None = None
+    summary_status: SummaryStatus = SummaryStatus.PENDING
+    summary_error_code: str | None = None
     clean_search_text: str | None = None
     clean_embed_text: str | None = None
     raw_text_ref: str | None = None

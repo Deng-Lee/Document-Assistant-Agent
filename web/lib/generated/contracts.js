@@ -3252,6 +3252,17 @@ export const apiContracts = {
         ],
         "title": "SourceLocator",
         "type": "object"
+      },
+      "SummaryStatus": {
+        "description": "An enumeration.",
+        "enum": [
+          "pending",
+          "built",
+          "fallback",
+          "failed"
+        ],
+        "title": "SummaryStatus",
+        "type": "string"
       }
     },
     "description": "Shared model base so all contracts behave consistently.",
@@ -3295,6 +3306,26 @@ export const apiContracts = {
       "safe_summary": {
         "title": "Safe Summary",
         "type": "string"
+      },
+      "summary_error_code": {
+        "title": "Summary Error Code",
+        "type": "string"
+      },
+      "summary_model": {
+        "title": "Summary Model",
+        "type": "string"
+      },
+      "summary_prompt_version": {
+        "title": "Summary Prompt Version",
+        "type": "string"
+      },
+      "summary_status": {
+        "allOf": [
+          {
+            "$ref": "#/definitions/SummaryStatus"
+          }
+        ],
+        "default": "pending"
       }
     },
     "required": [

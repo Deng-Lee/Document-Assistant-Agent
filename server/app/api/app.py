@@ -58,6 +58,7 @@ from .models import (
 )
 from .responses import (
     ChatConversationResponse,
+    EnqueueJobResponse,
     EvalResultsResponse,
     EvalRubricEntriesResponse,
     EvalRubricResponse,
@@ -256,6 +257,31 @@ def create_app(root_dir: str | Path | None = None) -> FastAPI:
         state = _state(app)
         result = state.job_service.run_next(job_types=request.job_types or None)
         return RunJobResponse(result=_dump(result))
+
+    @app.post("/api/chunks/{chunk_id}/safe_summary/rebuild", response_model=EnqueueJobResponse)
+    def rebuild_safe_summary(chunk_id: str) -> EnqueueJobResponse:
+        state = _state(app)
+        chunk = state.document_repository.get_chunk(chunk_id)
+        if chunk is None:
+            raise HTTPException(status_code=404, detail="chunk not found")
+        state.document_repository.update_chunk_summary_state(
+            chunk_id,
+            safe_summary=chunk.safe_summary or "",
+            summary_model=state.runtime_config.model_routing.base_model,
+            summary_prompt_version=state.runtime_config.prompt_versions.safe_summary,
+            summary_status="pending",
+            summary_error_code=None,
+        )
+        job = state.job_service.enqueue(
+            "safe_summary_build",
+            {
+                "chunk_id": chunk.chunk_id,
+                "doc_version_id": chunk.doc_version_id,
+                "summary_prompt_version": state.runtime_config.prompt_versions.safe_summary,
+                "summary_model": state.runtime_config.model_routing.base_model,
+            },
+        )
+        return EnqueueJobResponse(job=job)
 
     @app.get("/api/traces/{trace_id}", response_model=TraceRecord)
     def get_trace(trace_id: str) -> TraceRecord:

@@ -84,6 +84,10 @@ class RunJobResponse(PDABaseModel):
     result: JobRunResult | None = None
 
 
+class EnqueueJobResponse(PDABaseModel):
+    job: JobRecord
+
+
 class TraceSummaryItem(PDABaseModel):
     trace_id: str
     created_at: str | None = None

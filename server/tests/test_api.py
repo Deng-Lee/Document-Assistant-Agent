@@ -31,6 +31,10 @@ class APITests(unittest.TestCase):
 
             run_job_payload = dump_result(routes["/api/jobs/run-next"](RunJobsRequest(job_types=["safe_summary_build"])))
             self.assertEqual(run_job_payload["result"]["job"]["status"], "succeeded")
+            chunk_id = ingest_payload["chunk_ids"][0]
+            rebuild_payload = dump_result(routes["/api/chunks/{chunk_id}/safe_summary/rebuild"](chunk_id))
+            self.assertEqual(rebuild_payload["job"]["job_type"], "safe_summary_build")
+            self.assertEqual(rebuild_payload["job"]["payload"]["chunk_id"], chunk_id)
 
             retrieve_payload = dump_result(routes["/api/retrieve"](RetrieveRequest(query_text="maze mirror", mode="full")))
             self.assertGreaterEqual(len(retrieve_payload["evidence_pack"]["items"]), 1)

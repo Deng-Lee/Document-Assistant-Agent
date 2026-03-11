@@ -80,6 +80,9 @@ class IngestionService:
             size_bytes=loaded.size_bytes,
         )
         chunks = build_chunk_records(loaded=loaded, parsed=parsed, doc_id=resolved_doc_id, doc_version=doc_version)
+        for chunk in chunks:
+            chunk.summary_model = self.runtime_config.model_routing.base_model
+            chunk.summary_prompt_version = self.runtime_config.prompt_versions.safe_summary
 
         self.document_repository.init_schema()
         self.document_repository.upsert_document(document)

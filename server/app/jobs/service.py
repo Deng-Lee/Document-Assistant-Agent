@@ -3,10 +3,18 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import uuid4
 
-from server.app.core import JobRecord, JobRunResult, JobStatus, RuntimeConfigSnapshot, build_runtime_config
+from server.app.core import JobRecord, JobRunResult, JobStatus, RuntimeConfigSnapshot, SummaryStatus, build_runtime_config
 from server.app.ingestion.chunker import build_safe_summary_fallback
 from server.app.storage import DocumentRepository, JobRepository, VectorStore
 from server.app.storage.vector_indexing import build_embedding_upsert_records
+from .safe_summary_provider import (
+    SafeSummaryProvider,
+    SafeSummaryProviderError,
+    SafeSummaryProviderSchemaError,
+    SafeSummaryProviderUnavailableError,
+    SafeSummaryRequest,
+    build_safe_summary_provider,
+)
 
 
 class JobService:
@@ -16,11 +24,13 @@ class JobService:
         job_repository: JobRepository,
         runtime_config: RuntimeConfigSnapshot | None = None,
         vector_store: VectorStore | None = None,
+        safe_summary_provider: SafeSummaryProvider | None = None,
     ):
         self.document_repository = document_repository
         self.job_repository = job_repository
         self.runtime_config = runtime_config or build_runtime_config()
         self.vector_store = vector_store
+        self.safe_summary_provider = safe_summary_provider or build_safe_summary_provider(self.runtime_config)
 
     def enqueue(self, job_type: str, payload: dict[str, object], job_id: str | None = None) -> JobRecord:
         now = datetime.utcnow()
@@ -80,12 +90,51 @@ class JobService:
         chunk = self.document_repository.get_chunk(chunk_id)
         if chunk is None:
             raise ValueError(f"chunk not found: {chunk_id}")
-        source_text = chunk.clean_search_text or chunk.safe_summary or ""
-        safe_summary = build_safe_summary_fallback(source_text)
-        self.document_repository.update_chunk_safe_summary(chunk_id, safe_summary)
+        raw_chunk_text = (chunk.raw_text_ref or "").strip()
+        if not raw_chunk_text:
+            raw_chunk_text = chunk.clean_search_text or chunk.safe_summary or ""
+        summary_model = str(job.payload.get("summary_model") or self.runtime_config.model_routing.base_model)
+        prompt_version = str(job.payload.get("summary_prompt_version") or self.runtime_config.prompt_versions.safe_summary)
+        try:
+            output = self.safe_summary_provider.summarize(
+                SafeSummaryRequest(
+                    raw_chunk_text=raw_chunk_text,
+                    chunk=chunk,
+                    runtime_config=self.runtime_config,
+                )
+            )
+        except (
+            SafeSummaryProviderUnavailableError,
+            SafeSummaryProviderSchemaError,
+            SafeSummaryProviderError,
+        ) as exc:
+            safe_summary = build_safe_summary_fallback(chunk.clean_search_text or raw_chunk_text)
+            self.document_repository.update_chunk_summary_state(
+                chunk_id,
+                safe_summary=safe_summary,
+                summary_model=summary_model,
+                summary_prompt_version=prompt_version,
+                summary_status=SummaryStatus.FALLBACK.value,
+                summary_error_code=str(exc),
+            )
+            return [
+                "safe_summary_fallback",
+                f"prompt_version={prompt_version}",
+                f"summary_model={summary_model}",
+                f"summary_error_code={exc}",
+            ]
+        self.document_repository.update_chunk_summary_state(
+            chunk_id,
+            safe_summary=output.safe_summary,
+            summary_model=output.model_name,
+            summary_prompt_version=output.prompt_version,
+            summary_status=SummaryStatus.BUILT.value,
+            summary_error_code=None,
+        )
         return [
             "safe_summary_updated",
-            f"prompt_version={job.payload.get('summary_prompt_version') or self.runtime_config.prompt_versions.safe_summary}",
+            f"prompt_version={output.prompt_version}",
+            f"summary_model={output.model_name}",
         ]
 
     def _run_reindex_doc_version(self, job: JobRecord) -> list[str]:

@@ -110,6 +110,13 @@ class JobStatus(str, Enum):
     FAILED = "failed"
 
 
+class SummaryStatus(str, Enum):
+    PENDING = "pending"
+    BUILT = "built"
+    FALLBACK = "fallback"
+    FAILED = "failed"
+
+
 class EntryPoint(str, Enum):
     CHAT = "chat"
     RECORD = "record"

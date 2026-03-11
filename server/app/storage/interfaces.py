@@ -23,11 +23,24 @@ class DocumentRepository(Protocol):
 
     def insert_doc_version(self, doc_version: DocVersionRecord) -> None: ...
 
+    def get_doc_version(self, doc_version_id: str) -> DocVersionRecord | None: ...
+
     def insert_chunk(self, chunk: ChunkRecord) -> None: ...
 
     def get_chunk(self, chunk_id: str) -> ChunkRecord | None: ...
 
     def update_chunk_safe_summary(self, chunk_id: str, safe_summary: str) -> None: ...
+
+    def update_chunk_summary_state(
+        self,
+        chunk_id: str,
+        *,
+        safe_summary: str,
+        summary_model: str | None,
+        summary_prompt_version: str | None,
+        summary_status: str,
+        summary_error_code: str | None,
+    ) -> None: ...
 
     def list_chunks(self) -> list[ChunkRecord]: ...
 

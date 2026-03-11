@@ -45,6 +45,10 @@ class SQLiteStore:
     def _run_lightweight_migrations(connection: sqlite3.Connection) -> None:
         _ensure_column(connection, "golden_cases", "trace_id", "TEXT")
         _ensure_column(connection, "eval_runs", "result_json", "TEXT")
+        _ensure_column(connection, "chunks", "summary_model", "TEXT")
+        _ensure_column(connection, "chunks", "summary_prompt_version", "TEXT")
+        _ensure_column(connection, "chunks", "summary_status", "TEXT")
+        _ensure_column(connection, "chunks", "summary_error_code", "TEXT")
 
 
 class SQLiteDocumentRepository:
@@ -83,6 +87,27 @@ class SQLiteDocumentRepository:
             )
             connection.commit()
 
+    def get_doc_version(self, doc_version_id: str) -> DocVersionRecord | None:
+        with self.store.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT doc_version_id, doc_id, content_hash, ingest_time, source_path, size_bytes
+                FROM doc_versions
+                WHERE doc_version_id = ?
+                """,
+                (doc_version_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return DocVersionRecord(
+            doc_version_id=row["doc_version_id"],
+            doc_id=row["doc_id"],
+            content_hash=row["content_hash"],
+            ingest_time=datetime.fromisoformat(row["ingest_time"]),
+            source_path=row["source_path"],
+            size_bytes=row["size_bytes"],
+        )
+
     def insert_chunk(self, chunk: ChunkRecord) -> None:
         payload = model_to_dict(chunk)
         with self.store.connect() as connection:
@@ -91,10 +116,12 @@ class SQLiteDocumentRepository:
                 INSERT OR REPLACE INTO chunks
                 (chunk_id, doc_id, doc_version_id, doc_type, chunk_type, record_date, position, orientation,
                  distance, goal, opponent_control, heading_path_json, locator_json, metadata_digest_json,
-                 safe_summary, clean_search_text, clean_embed_text, raw_text_ref)
+                 safe_summary, summary_model, summary_prompt_version, summary_status, summary_error_code,
+                 clean_search_text, clean_embed_text, raw_text_ref)
                 VALUES (:chunk_id, :doc_id, :doc_version_id, :doc_type, :chunk_type, :record_date, :position, :orientation,
                         :distance, :goal, :opponent_control, :heading_path_json, :locator_json, :metadata_digest_json,
-                        :safe_summary, :clean_search_text, :clean_embed_text, :raw_text_ref)
+                        :safe_summary, :summary_model, :summary_prompt_version, :summary_status, :summary_error_code,
+                        :clean_search_text, :clean_embed_text, :raw_text_ref)
                 """,
                 {
                     "chunk_id": payload["chunk_id"],
@@ -112,6 +139,10 @@ class SQLiteDocumentRepository:
                     "locator_json": model_to_json(chunk.locator),
                     "metadata_digest_json": model_to_json(chunk.metadata_digest),
                     "safe_summary": payload.get("safe_summary"),
+                    "summary_model": payload.get("summary_model"),
+                    "summary_prompt_version": payload.get("summary_prompt_version"),
+                    "summary_status": payload.get("summary_status"),
+                    "summary_error_code": payload.get("summary_error_code"),
                     "clean_search_text": payload.get("clean_search_text"),
                     "clean_embed_text": payload.get("clean_embed_text"),
                     "raw_text_ref": payload.get("raw_text_ref"),
@@ -130,7 +161,8 @@ class SQLiteDocumentRepository:
             row = connection.execute(
                 """
                 SELECT chunk_id, doc_id, doc_version_id, doc_type, chunk_type, locator_json, metadata_digest_json,
-                       safe_summary, clean_search_text, clean_embed_text, raw_text_ref
+                       safe_summary, summary_model, summary_prompt_version, summary_status, summary_error_code,
+                       clean_search_text, clean_embed_text, raw_text_ref
                 FROM chunks
                 WHERE chunk_id = ?
                 """,
@@ -139,10 +171,44 @@ class SQLiteDocumentRepository:
         return self._row_to_chunk(row) if row is not None else None
 
     def update_chunk_safe_summary(self, chunk_id: str, safe_summary: str) -> None:
+        self.update_chunk_summary_state(
+            chunk_id,
+            safe_summary=safe_summary,
+            summary_model=None,
+            summary_prompt_version=None,
+            summary_status="built",
+            summary_error_code=None,
+        )
+
+    def update_chunk_summary_state(
+        self,
+        chunk_id: str,
+        *,
+        safe_summary: str,
+        summary_model: str | None,
+        summary_prompt_version: str | None,
+        summary_status: str,
+        summary_error_code: str | None,
+    ) -> None:
         with self.store.connect() as connection:
             connection.execute(
-                "UPDATE chunks SET safe_summary = ? WHERE chunk_id = ?",
-                (safe_summary, chunk_id),
+                """
+                UPDATE chunks
+                SET safe_summary = ?,
+                    summary_model = ?,
+                    summary_prompt_version = ?,
+                    summary_status = ?,
+                    summary_error_code = ?
+                WHERE chunk_id = ?
+                """,
+                (
+                    safe_summary,
+                    summary_model,
+                    summary_prompt_version,
+                    summary_status,
+                    summary_error_code,
+                    chunk_id,
+                ),
             )
             connection.commit()
 
@@ -151,7 +217,8 @@ class SQLiteDocumentRepository:
             rows = connection.execute(
                 """
                 SELECT chunk_id, doc_id, doc_version_id, doc_type, chunk_type, locator_json, metadata_digest_json,
-                       safe_summary, clean_search_text, clean_embed_text, raw_text_ref
+                       safe_summary, summary_model, summary_prompt_version, summary_status, summary_error_code,
+                       clean_search_text, clean_embed_text, raw_text_ref
                 FROM chunks
                 ORDER BY chunk_id
                 """
@@ -163,7 +230,8 @@ class SQLiteDocumentRepository:
             rows = connection.execute(
                 """
                 SELECT chunk_id, doc_id, doc_version_id, doc_type, chunk_type, locator_json, metadata_digest_json,
-                       safe_summary, clean_search_text, clean_embed_text, raw_text_ref
+                       safe_summary, summary_model, summary_prompt_version, summary_status, summary_error_code,
+                       clean_search_text, clean_embed_text, raw_text_ref
                 FROM chunks
                 WHERE doc_version_id = ?
                 ORDER BY chunk_id
@@ -202,7 +270,8 @@ class SQLiteDocumentRepository:
 
         sql = """
             SELECT chunk_id, doc_id, doc_version_id, doc_type, chunk_type, locator_json, metadata_digest_json,
-                   safe_summary, clean_search_text, clean_embed_text, raw_text_ref
+                   safe_summary, summary_model, summary_prompt_version, summary_status, summary_error_code,
+                   clean_search_text, clean_embed_text, raw_text_ref
             FROM chunks
         """
         if clauses:
@@ -219,7 +288,8 @@ class SQLiteDocumentRepository:
     def bm25_search(self, query_text: str, limit: int, filters: dict[str, object] | None = None) -> list[ChunkRecord]:
         sql = """
             SELECT c.chunk_id, c.doc_id, c.doc_version_id, c.doc_type, c.chunk_type, c.locator_json, c.metadata_digest_json,
-                   c.safe_summary, c.clean_search_text, c.clean_embed_text, c.raw_text_ref
+                   c.safe_summary, c.summary_model, c.summary_prompt_version, c.summary_status, c.summary_error_code,
+                   c.clean_search_text, c.clean_embed_text, c.raw_text_ref
             FROM chunk_fts f
             JOIN chunks c ON c.chunk_id = f.chunk_id
             WHERE f.clean_search_text MATCH ?
