@@ -118,6 +118,73 @@ class JobServiceTests(unittest.TestCase):
             )
             self.assertEqual(wrong_version_matches, [])
 
+    def test_reembed_job_keeps_old_embedding_versions_isolated(self) -> None:
+        with TemporaryDirectory() as tmp:
+            repo, _job_repo, vector_store, job_service, chunk = _build_vector_job_stack(tmp)
+
+            from server.app.core.embeddings import build_text_embedding
+
+            first_job = job_service.enqueue("reembed_doc_version", {"doc_version_id": chunk.doc_version_id})
+            second_job = job_service.enqueue(
+                "reembed_doc_version",
+                {
+                    "doc_version_id": chunk.doc_version_id,
+                    "embedding_version_id": "mock-embedding:v2",
+                },
+            )
+
+            self.assertEqual(job_service.run_job(first_job.job_id).job.status.value, "succeeded")
+            second_result = job_service.run_job(second_job.job_id)
+
+            self.assertEqual(second_result.job.status.value, "succeeded")
+            self.assertIn("embedding_version_id=mock-embedding:v2", second_result.notes)
+            query_vector = build_text_embedding("tripod post turtle escape")
+            matches_v1 = vector_store.query(
+                query_vector,
+                top_k=5,
+                where={
+                    "doc_version_id": chunk.doc_version_id,
+                    "embedding_version_id": "mock-embedding:v1",
+                },
+            )
+            matches_v2 = vector_store.query(
+                query_vector,
+                top_k=5,
+                where={
+                    "doc_version_id": chunk.doc_version_id,
+                    "embedding_version_id": "mock-embedding:v2",
+                },
+            )
+            self.assertTrue(matches_v1)
+            self.assertTrue(matches_v2)
+            self.assertEqual(matches_v1[0].chunk_id, chunk.chunk_id)
+            self.assertEqual(matches_v2[0].chunk_id, chunk.chunk_id)
+
+    def test_maintenance_scope_resolves_doc_id_and_all(self) -> None:
+        with TemporaryDirectory() as tmp:
+            repo, job_repo, job_service, chunk = _build_job_stack(tmp)
+            repo.insert_doc_version(repo.get_doc_version(chunk.doc_version_id))
+
+            versions_by_doc, affected_chunks, jobs = job_service.enqueue_reindex_jobs(
+                scope="doc_id",
+                doc_id=chunk.doc_id,
+                rebuild_fts5=True,
+                rebuild_chroma=False,
+                rebuild_safe_summary=False,
+            )
+
+            self.assertEqual([version.doc_version_id for version in versions_by_doc], [chunk.doc_version_id])
+            self.assertGreaterEqual(affected_chunks, 1)
+            self.assertEqual(len(jobs), 1)
+            preview_versions, preview_chunks, dry_jobs = job_service.enqueue_reembed_jobs(
+                scope="all",
+                embedding_version_id="mock-embedding:v3",
+                dry_run=True,
+            )
+            self.assertTrue(preview_versions)
+            self.assertGreaterEqual(preview_chunks, 1)
+            self.assertEqual(dry_jobs, [])
+
     def test_vector_store_persists_hits_across_adapter_recreation(self) -> None:
         with TemporaryDirectory() as tmp:
             repo, _job_repo, vector_store, _job_service, chunk = _build_vector_job_stack(tmp)

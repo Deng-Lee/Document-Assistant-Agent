@@ -52,6 +52,8 @@
   - `POST /api/record/bjj`
   - `POST /api/record/notes`
   - provider-backed `safe_summary_build` job + `POST /api/chunks/{chunk_id}/safe_summary/rebuild`
+  - `POST /api/maintenance/reindex`
+  - `POST /api/maintenance/reembed`
 - Retrieval 已支持：
   - structured filters
   - BM25(FTS5)

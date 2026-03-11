@@ -88,6 +88,15 @@ class EnqueueJobResponse(PDABaseModel):
     job: JobRecord
 
 
+class MaintenanceEnqueueResponse(PDABaseModel):
+    scope: str
+    doc_version_ids: list[str] = Field(default_factory=list)
+    affected_chunk_count: int = 0
+    jobs: list[JobRecord] = Field(default_factory=list)
+    dry_run: bool = False
+    embedding_version_id: str | None = None
+
+
 class TraceSummaryItem(PDABaseModel):
     trace_id: str
     created_at: str | None = None

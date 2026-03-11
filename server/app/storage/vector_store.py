@@ -67,9 +67,14 @@ class ChromaVectorStoreAdapter:
                 metadatas=[_metadata_for_chroma(record) for record in batch],
             )
 
-    def delete_doc_version(self, doc_version_id: str) -> None:
+    def delete_doc_version(self, doc_version_id: str, embedding_version_id: str | None = None) -> None:
         self.ensure_collection()
-        for collection in self._iter_managed_collections():
+        collections = (
+            [self._get_or_create_collection(embedding_version_id)]
+            if embedding_version_id
+            else self._iter_managed_collections()
+        )
+        for collection in collections:
             collection.delete(where={"doc_version_id": doc_version_id})
 
     def query(

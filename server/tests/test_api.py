@@ -30,7 +30,13 @@ class APITests(unittest.TestCase):
             app = create_test_app(tmp)
             routes = endpoint_map(app)
 
-            from server.app.api.models import IngestTextRequest, RetrieveRequest, RunJobsRequest
+            from server.app.api.models import (
+                IngestTextRequest,
+                MaintenanceReembedRequest,
+                MaintenanceReindexRequest,
+                RetrieveRequest,
+                RunJobsRequest,
+            )
 
             ingest_payload = dump_result(
                 routes["/api/ingest/text"](
@@ -49,6 +55,37 @@ class APITests(unittest.TestCase):
             rebuild_payload = dump_result(routes["/api/chunks/{chunk_id}/safe_summary/rebuild"](chunk_id))
             self.assertEqual(rebuild_payload["job"]["job_type"], "safe_summary_build")
             self.assertEqual(rebuild_payload["job"]["payload"]["chunk_id"], chunk_id)
+
+            reindex_payload = dump_result(
+                routes["/api/maintenance/reindex"](
+                    MaintenanceReindexRequest(
+                        scope="doc_version_id",
+                        doc_version_id=ingest_payload["doc_version_id"],
+                        rebuild_fts5=True,
+                        rebuild_chroma=True,
+                        rebuild_safe_summary=True,
+                    )
+                )
+            )
+            self.assertEqual(reindex_payload["scope"], "doc_version_id")
+            self.assertEqual(reindex_payload["doc_version_ids"], [ingest_payload["doc_version_id"]])
+            self.assertGreaterEqual(len(reindex_payload["jobs"]), 3)
+            self.assertGreaterEqual(reindex_payload["affected_chunk_count"], 1)
+
+            reembed_payload = dump_result(
+                routes["/api/maintenance/reembed"](
+                    MaintenanceReembedRequest(
+                        scope="doc_id",
+                        doc_id=ingest_payload["doc_id"],
+                        embedding_version_id="embedding:test:v2",
+                        dry_run=True,
+                    )
+                )
+            )
+            self.assertEqual(reembed_payload["scope"], "doc_id")
+            self.assertEqual(reembed_payload["embedding_version_id"], "embedding:test:v2")
+            self.assertTrue(reembed_payload["dry_run"])
+            self.assertEqual(reembed_payload["jobs"], [])
 
             retrieve_payload = dump_result(routes["/api/retrieve"](RetrieveRequest(query_text="maze mirror", mode="full")))
             self.assertGreaterEqual(len(retrieve_payload["evidence_pack"]["items"]), 1)

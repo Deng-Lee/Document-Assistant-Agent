@@ -108,6 +108,30 @@ class SQLiteDocumentRepository:
             size_bytes=row["size_bytes"],
         )
 
+    def list_doc_versions(self, doc_id: str | None = None) -> list[DocVersionRecord]:
+        sql = """
+            SELECT doc_version_id, doc_id, content_hash, ingest_time, source_path, size_bytes
+            FROM doc_versions
+        """
+        parameters: tuple[object, ...] = ()
+        if doc_id is not None:
+            sql += " WHERE doc_id = ?"
+            parameters = (doc_id,)
+        sql += " ORDER BY ingest_time DESC, doc_version_id DESC"
+        with self.store.connect() as connection:
+            rows = connection.execute(sql, parameters).fetchall()
+        return [
+            DocVersionRecord(
+                doc_version_id=row["doc_version_id"],
+                doc_id=row["doc_id"],
+                content_hash=row["content_hash"],
+                ingest_time=datetime.fromisoformat(row["ingest_time"]),
+                source_path=row["source_path"],
+                size_bytes=row["size_bytes"],
+            )
+            for row in rows
+        ]
+
     def insert_chunk(self, chunk: ChunkRecord) -> None:
         payload = model_to_dict(chunk)
         with self.store.connect() as connection:

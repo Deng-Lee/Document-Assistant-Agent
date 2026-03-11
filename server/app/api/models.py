@@ -80,5 +80,22 @@ class RunJobsRequest(PDABaseModel):
     job_types: list[str] = Field(default_factory=list)
 
 
+class MaintenanceReindexRequest(PDABaseModel):
+    scope: str
+    doc_version_id: str | None = None
+    doc_id: str | None = None
+    rebuild_fts5: bool = True
+    rebuild_chroma: bool = False
+    rebuild_safe_summary: bool = False
+
+
+class MaintenanceReembedRequest(PDABaseModel):
+    scope: str
+    doc_version_id: str | None = None
+    doc_id: str | None = None
+    embedding_version_id: str
+    dry_run: bool = False
+
+
 class SFTTrainAPIRequest(PolicyTrainRequest):
     pass

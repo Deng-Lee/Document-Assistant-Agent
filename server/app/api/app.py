@@ -49,6 +49,8 @@ from .models import (
     IngestDirRequest,
     IngestFileRequest,
     IngestTextRequest,
+    MaintenanceReembedRequest,
+    MaintenanceReindexRequest,
     NotesRecordRequest,
     ProfilePatchRequest,
     ReplayRequest,
@@ -68,6 +70,7 @@ from .responses import (
     IngestFileResponse,
     IngestTextResponse,
     JobsListResponse,
+    MaintenanceEnqueueResponse,
     ProfileHistoryResponse,
     ProfileResponse,
     RecordBJJResponse,
@@ -282,6 +285,49 @@ def create_app(root_dir: str | Path | None = None) -> FastAPI:
             },
         )
         return EnqueueJobResponse(job=job)
+
+    @app.post("/api/maintenance/reindex", response_model=MaintenanceEnqueueResponse)
+    def enqueue_reindex(request: MaintenanceReindexRequest) -> MaintenanceEnqueueResponse:
+        state = _state(app)
+        try:
+            versions, affected_chunks, jobs = state.job_service.enqueue_reindex_jobs(
+                scope=request.scope,
+                doc_version_id=request.doc_version_id,
+                doc_id=request.doc_id,
+                rebuild_fts5=request.rebuild_fts5,
+                rebuild_chroma=request.rebuild_chroma,
+                rebuild_safe_summary=request.rebuild_safe_summary,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return MaintenanceEnqueueResponse(
+            scope=request.scope,
+            doc_version_ids=[version.doc_version_id for version in versions],
+            affected_chunk_count=affected_chunks,
+            jobs=jobs,
+        )
+
+    @app.post("/api/maintenance/reembed", response_model=MaintenanceEnqueueResponse)
+    def enqueue_reembed(request: MaintenanceReembedRequest) -> MaintenanceEnqueueResponse:
+        state = _state(app)
+        try:
+            versions, affected_chunks, jobs = state.job_service.enqueue_reembed_jobs(
+                scope=request.scope,
+                embedding_version_id=request.embedding_version_id,
+                doc_version_id=request.doc_version_id,
+                doc_id=request.doc_id,
+                dry_run=request.dry_run,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return MaintenanceEnqueueResponse(
+            scope=request.scope,
+            doc_version_ids=[version.doc_version_id for version in versions],
+            affected_chunk_count=affected_chunks,
+            jobs=jobs,
+            dry_run=request.dry_run,
+            embedding_version_id=request.embedding_version_id,
+        )
 
     @app.get("/api/traces/{trace_id}", response_model=TraceRecord)
     def get_trace(trace_id: str) -> TraceRecord:

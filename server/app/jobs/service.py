@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import uuid4
 
-from server.app.core import JobRecord, JobRunResult, JobStatus, RuntimeConfigSnapshot, SummaryStatus, build_runtime_config
+from server.app.core import DocVersionRecord, JobRecord, JobRunResult, JobStatus, RuntimeConfigSnapshot, SummaryStatus, build_runtime_config
 from server.app.ingestion.chunker import build_safe_summary_fallback
 from server.app.storage import DocumentRepository, JobRepository, VectorStore
 from server.app.storage.vector_indexing import build_embedding_upsert_records
@@ -47,6 +47,136 @@ class JobService:
 
     def list_jobs(self, status: JobStatus | None = None, limit: int | None = None) -> list[JobRecord]:
         return self.job_repository.list_jobs(status=status, limit=limit)
+
+    def resolve_doc_version_scope(
+        self,
+        *,
+        scope: str,
+        doc_version_id: str | None = None,
+        doc_id: str | None = None,
+    ) -> list[DocVersionRecord]:
+        if scope == "doc_version_id":
+            if not doc_version_id:
+                raise ValueError("doc_version_id scope requires doc_version_id")
+            doc_version = self.document_repository.get_doc_version(doc_version_id)
+            if doc_version is None:
+                raise ValueError(f"doc_version not found: {doc_version_id}")
+            return [doc_version]
+        if scope == "doc_id":
+            if not doc_id:
+                raise ValueError("doc_id scope requires doc_id")
+            versions = self.document_repository.list_doc_versions(doc_id)
+            if not versions:
+                raise ValueError(f"doc_id not found: {doc_id}")
+            return versions
+        if scope == "all":
+            versions = self.document_repository.list_doc_versions()
+            if not versions:
+                raise ValueError("no_doc_versions_available")
+            return versions
+        raise ValueError(f"unsupported_scope:{scope}")
+
+    def preview_scope(
+        self,
+        *,
+        scope: str,
+        doc_version_id: str | None = None,
+        doc_id: str | None = None,
+    ) -> tuple[list[DocVersionRecord], int]:
+        versions = self.resolve_doc_version_scope(
+            scope=scope,
+            doc_version_id=doc_version_id,
+            doc_id=doc_id,
+        )
+        affected_chunks = sum(
+            len(self.document_repository.list_chunks_for_doc_version(version.doc_version_id))
+            for version in versions
+        )
+        return versions, affected_chunks
+
+    def enqueue_reindex_jobs(
+        self,
+        *,
+        scope: str,
+        doc_version_id: str | None = None,
+        doc_id: str | None = None,
+        rebuild_fts5: bool,
+        rebuild_chroma: bool,
+        rebuild_safe_summary: bool = False,
+    ) -> tuple[list[DocVersionRecord], int, list[JobRecord]]:
+        if not any((rebuild_fts5, rebuild_chroma, rebuild_safe_summary)):
+            raise ValueError("reindex_requires_at_least_one_rebuild_flag")
+        versions, affected_chunks = self.preview_scope(
+            scope=scope,
+            doc_version_id=doc_version_id,
+            doc_id=doc_id,
+        )
+        jobs: list[JobRecord] = []
+        for version in versions:
+            if rebuild_fts5:
+                jobs.append(self.enqueue("reindex_doc_version", {"doc_version_id": version.doc_version_id}))
+            if rebuild_chroma:
+                jobs.append(
+                    self.enqueue(
+                        "reembed_doc_version",
+                        {
+                            "doc_version_id": version.doc_version_id,
+                            "embedding_version_id": self.runtime_config.embedding_version_id,
+                        },
+                    )
+                )
+            if rebuild_safe_summary:
+                for chunk in self.document_repository.list_chunks_for_doc_version(version.doc_version_id):
+                    self.document_repository.update_chunk_summary_state(
+                        chunk.chunk_id,
+                        safe_summary=chunk.safe_summary or "",
+                        summary_model=self.runtime_config.model_routing.base_model,
+                        summary_prompt_version=self.runtime_config.prompt_versions.safe_summary,
+                        summary_status=SummaryStatus.PENDING.value,
+                        summary_error_code=None,
+                    )
+                    jobs.append(
+                        self.enqueue(
+                            "safe_summary_build",
+                            {
+                                "chunk_id": chunk.chunk_id,
+                                "doc_version_id": chunk.doc_version_id,
+                                "summary_prompt_version": self.runtime_config.prompt_versions.safe_summary,
+                                "summary_model": self.runtime_config.model_routing.base_model,
+                            },
+                        )
+                    )
+        return versions, affected_chunks, jobs
+
+    def enqueue_reembed_jobs(
+        self,
+        *,
+        scope: str,
+        embedding_version_id: str,
+        doc_version_id: str | None = None,
+        doc_id: str | None = None,
+        dry_run: bool = False,
+    ) -> tuple[list[DocVersionRecord], int, list[JobRecord]]:
+        if not embedding_version_id:
+            raise ValueError("embedding_version_id_required")
+        versions, affected_chunks = self.preview_scope(
+            scope=scope,
+            doc_version_id=doc_version_id,
+            doc_id=doc_id,
+        )
+        if dry_run:
+            return versions, affected_chunks, []
+        jobs = [
+            self.enqueue(
+                "reembed_doc_version",
+                {
+                    "doc_version_id": version.doc_version_id,
+                    "embedding_version_id": embedding_version_id,
+                },
+            )
+            for version in versions
+        ]
+        return versions, affected_chunks, jobs
 
     def run_next(self, job_types: list[str] | None = None) -> JobRunResult | None:
         job = self.job_repository.claim_next_job(job_types=job_types)
@@ -152,11 +282,17 @@ class JobService:
             raise ValueError("reembed_doc_version requires doc_version_id")
         if self.vector_store is None:
             return ["vector_store_unavailable", f"doc_version_id={doc_version_id}"]
+        embedding_version_id = str(job.payload.get("embedding_version_id") or self.runtime_config.embedding_version_id)
         chunks = self.document_repository.list_chunks_for_doc_version(doc_version_id)
         self.vector_store.ensure_collection()
-        self.vector_store.delete_doc_version(doc_version_id)
-        self.vector_store.upsert_embeddings(build_embedding_upsert_records(chunks, self.runtime_config))
+        self.vector_store.delete_doc_version(doc_version_id, embedding_version_id=embedding_version_id)
+        runtime_config = (
+            self.runtime_config.model_copy(update={"embedding_version_id": embedding_version_id})
+            if hasattr(self.runtime_config, "model_copy")
+            else self.runtime_config.copy(update={"embedding_version_id": embedding_version_id})
+        )
+        self.vector_store.upsert_embeddings(build_embedding_upsert_records(chunks, runtime_config))
         return [
             f"reembedded_chunks={len(chunks)}",
-            f"embedding_version_id={self.runtime_config.embedding_version_id}",
+            f"embedding_version_id={embedding_version_id}",
         ]
