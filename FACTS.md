@@ -52,6 +52,7 @@
   - `POST /api/record/bjj`
   - `POST /api/record/notes`
   - provider-backed `safe_summary_build` job + `POST /api/chunks/{chunk_id}/safe_summary/rebuild`
+  - `safe_summary` 的显式 `FAILED` 状态与 retry 元数据持久化
   - `POST /api/maintenance/reindex`
   - `POST /api/maintenance/reembed`
 - Retrieval 已支持：

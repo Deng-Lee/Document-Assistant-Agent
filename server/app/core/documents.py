@@ -64,6 +64,10 @@ class ChunkRecord(PDABaseModel):
     summary_prompt_version: str | None = None
     summary_status: SummaryStatus = SummaryStatus.PENDING
     summary_error_code: str | None = None
+    summary_retry_count: int = Field(default=0, ge=0)
+    summary_last_attempt_at: datetime | None = None
+    summary_next_retry_at: datetime | None = None
+    summary_last_error_at: datetime | None = None
     clean_search_text: str | None = None
     clean_embed_text: str | None = None
     raw_text_ref: str | None = None

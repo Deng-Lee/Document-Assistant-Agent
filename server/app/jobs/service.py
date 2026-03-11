@@ -4,7 +4,6 @@ from datetime import datetime
 from uuid import uuid4
 
 from server.app.core import DocVersionRecord, JobRecord, JobRunResult, JobStatus, RuntimeConfigSnapshot, SummaryStatus, build_runtime_config
-from server.app.ingestion.chunker import build_safe_summary_fallback
 from server.app.storage import DocumentRepository, JobRepository, VectorStore
 from server.app.storage.vector_indexing import build_embedding_upsert_records
 from .safe_summary_provider import (
@@ -134,6 +133,10 @@ class JobService:
                         summary_prompt_version=self.runtime_config.prompt_versions.safe_summary,
                         summary_status=SummaryStatus.PENDING.value,
                         summary_error_code=None,
+                        summary_retry_count=0,
+                        summary_last_attempt_at=None,
+                        summary_next_retry_at=None,
+                        summary_last_error_at=None,
                     )
                     jobs.append(
                         self.enqueue(
@@ -225,6 +228,19 @@ class JobService:
             raw_chunk_text = chunk.clean_search_text or chunk.safe_summary or ""
         summary_model = str(job.payload.get("summary_model") or self.runtime_config.model_routing.base_model)
         prompt_version = str(job.payload.get("summary_prompt_version") or self.runtime_config.prompt_versions.safe_summary)
+        attempt_started_at = datetime.utcnow()
+        self.document_repository.update_chunk_summary_state(
+            chunk_id,
+            safe_summary=chunk.safe_summary or "",
+            summary_model=summary_model,
+            summary_prompt_version=prompt_version,
+            summary_status=SummaryStatus.RUNNING.value,
+            summary_error_code=None,
+            summary_retry_count=chunk.summary_retry_count,
+            summary_last_attempt_at=attempt_started_at.isoformat(),
+            summary_next_retry_at=chunk.summary_next_retry_at.isoformat() if chunk.summary_next_retry_at else None,
+            summary_last_error_at=chunk.summary_last_error_at.isoformat() if chunk.summary_last_error_at else None,
+        )
         try:
             output = self.safe_summary_provider.summarize(
                 SafeSummaryRequest(
@@ -238,21 +254,21 @@ class JobService:
             SafeSummaryProviderSchemaError,
             SafeSummaryProviderError,
         ) as exc:
-            safe_summary = build_safe_summary_fallback(chunk.clean_search_text or raw_chunk_text)
+            failed_at = datetime.utcnow()
+            error_code = _safe_summary_error_code(exc)
             self.document_repository.update_chunk_summary_state(
                 chunk_id,
-                safe_summary=safe_summary,
+                safe_summary=chunk.safe_summary or "",
                 summary_model=summary_model,
                 summary_prompt_version=prompt_version,
-                summary_status=SummaryStatus.FALLBACK.value,
-                summary_error_code=str(exc),
+                summary_status=SummaryStatus.FAILED.value,
+                summary_error_code=error_code,
+                summary_retry_count=chunk.summary_retry_count + 1,
+                summary_last_attempt_at=attempt_started_at.isoformat(),
+                summary_next_retry_at=None,
+                summary_last_error_at=failed_at.isoformat(),
             )
-            return [
-                "safe_summary_fallback",
-                f"prompt_version={prompt_version}",
-                f"summary_model={summary_model}",
-                f"summary_error_code={exc}",
-            ]
+            raise RuntimeError(error_code) from exc
         self.document_repository.update_chunk_summary_state(
             chunk_id,
             safe_summary=output.safe_summary,
@@ -260,6 +276,10 @@ class JobService:
             summary_prompt_version=output.prompt_version,
             summary_status=SummaryStatus.BUILT.value,
             summary_error_code=None,
+            summary_retry_count=0,
+            summary_last_attempt_at=attempt_started_at.isoformat(),
+            summary_next_retry_at=None,
+            summary_last_error_at=None,
         )
         return [
             "safe_summary_updated",
@@ -296,3 +316,13 @@ class JobService:
             f"reembedded_chunks={len(chunks)}",
             f"embedding_version_id={embedding_version_id}",
         ]
+
+
+def _safe_summary_error_code(exc: Exception) -> str:
+    if isinstance(exc, SafeSummaryProviderUnavailableError):
+        return f"provider_unavailable:{exc}"
+    if isinstance(exc, SafeSummaryProviderSchemaError):
+        return f"provider_schema_error:{exc}"
+    if isinstance(exc, SafeSummaryProviderError):
+        return f"provider_error:{exc}"
+    return f"provider_error:{exc}"

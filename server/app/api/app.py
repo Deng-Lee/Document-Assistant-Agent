@@ -274,6 +274,10 @@ def create_app(root_dir: str | Path | None = None) -> FastAPI:
             summary_prompt_version=state.runtime_config.prompt_versions.safe_summary,
             summary_status="pending",
             summary_error_code=None,
+            summary_retry_count=0,
+            summary_last_attempt_at=None,
+            summary_next_retry_at=None,
+            summary_last_error_at=None,
         )
         job = state.job_service.enqueue(
             "safe_summary_build",

@@ -32,9 +32,12 @@ class JobServiceTests(unittest.TestCase):
             self.assertEqual(updated.summary_status.value, "built")
             self.assertEqual(updated.summary_prompt_version, "safe_summary.v1")
             self.assertTrue(updated.summary_model)
+            self.assertEqual(updated.summary_retry_count, 0)
+            self.assertIsNotNone(updated.summary_last_attempt_at)
+            self.assertIsNone(updated.summary_last_error_at)
             self.assertEqual(job_repo.get_job(queued.job_id).status.value, "succeeded")
 
-    def test_safe_summary_job_marks_fallback_on_provider_error(self) -> None:
+    def test_safe_summary_job_marks_failed_on_first_provider_error(self) -> None:
         with TemporaryDirectory() as tmp:
             repo, job_repo, _job_service, chunk = _build_job_stack(tmp)
 
@@ -62,12 +65,16 @@ class JobServiceTests(unittest.TestCase):
 
             result = job_service.run_job(queued.job_id)
 
-            self.assertEqual(result.job.status.value, "succeeded")
+            self.assertEqual(result.job.status.value, "failed")
             updated = repo.get_chunk(chunk.chunk_id)
-            self.assertEqual(updated.summary_status.value, "fallback")
-            self.assertEqual(updated.summary_error_code, "synthetic_failure")
+            self.assertEqual(updated.summary_status.value, "failed")
+            self.assertEqual(updated.summary_error_code, "provider_error:synthetic_failure")
             self.assertEqual(updated.summary_model, "test-summary-model")
-            self.assertTrue(updated.safe_summary)
+            self.assertEqual(updated.summary_retry_count, 1)
+            self.assertIsNotNone(updated.summary_last_attempt_at)
+            self.assertIsNotNone(updated.summary_last_error_at)
+            self.assertIsNone(updated.summary_next_retry_at)
+            self.assertEqual(job_repo.get_job(queued.job_id).error_message, "provider_error:synthetic_failure")
 
     def test_reindex_and_reembed_jobs_complete(self) -> None:
         with TemporaryDirectory() as tmp:

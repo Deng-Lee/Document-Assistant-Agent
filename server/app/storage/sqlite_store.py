@@ -49,6 +49,10 @@ class SQLiteStore:
         _ensure_column(connection, "chunks", "summary_prompt_version", "TEXT")
         _ensure_column(connection, "chunks", "summary_status", "TEXT")
         _ensure_column(connection, "chunks", "summary_error_code", "TEXT")
+        _ensure_column(connection, "chunks", "summary_retry_count", "INTEGER")
+        _ensure_column(connection, "chunks", "summary_last_attempt_at", "TEXT")
+        _ensure_column(connection, "chunks", "summary_next_retry_at", "TEXT")
+        _ensure_column(connection, "chunks", "summary_last_error_at", "TEXT")
 
 
 class SQLiteDocumentRepository:
@@ -141,10 +145,12 @@ class SQLiteDocumentRepository:
                 (chunk_id, doc_id, doc_version_id, doc_type, chunk_type, record_date, position, orientation,
                  distance, goal, opponent_control, heading_path_json, locator_json, metadata_digest_json,
                  safe_summary, summary_model, summary_prompt_version, summary_status, summary_error_code,
+                 summary_retry_count, summary_last_attempt_at, summary_next_retry_at, summary_last_error_at,
                  clean_search_text, clean_embed_text, raw_text_ref)
                 VALUES (:chunk_id, :doc_id, :doc_version_id, :doc_type, :chunk_type, :record_date, :position, :orientation,
                         :distance, :goal, :opponent_control, :heading_path_json, :locator_json, :metadata_digest_json,
                         :safe_summary, :summary_model, :summary_prompt_version, :summary_status, :summary_error_code,
+                        :summary_retry_count, :summary_last_attempt_at, :summary_next_retry_at, :summary_last_error_at,
                         :clean_search_text, :clean_embed_text, :raw_text_ref)
                 """,
                 {
@@ -167,6 +173,10 @@ class SQLiteDocumentRepository:
                     "summary_prompt_version": payload.get("summary_prompt_version"),
                     "summary_status": payload.get("summary_status"),
                     "summary_error_code": payload.get("summary_error_code"),
+                    "summary_retry_count": payload.get("summary_retry_count", 0),
+                    "summary_last_attempt_at": payload.get("summary_last_attempt_at"),
+                    "summary_next_retry_at": payload.get("summary_next_retry_at"),
+                    "summary_last_error_at": payload.get("summary_last_error_at"),
                     "clean_search_text": payload.get("clean_search_text"),
                     "clean_embed_text": payload.get("clean_embed_text"),
                     "raw_text_ref": payload.get("raw_text_ref"),
@@ -186,6 +196,7 @@ class SQLiteDocumentRepository:
                 """
                 SELECT chunk_id, doc_id, doc_version_id, doc_type, chunk_type, locator_json, metadata_digest_json,
                        safe_summary, summary_model, summary_prompt_version, summary_status, summary_error_code,
+                       summary_retry_count, summary_last_attempt_at, summary_next_retry_at, summary_last_error_at,
                        clean_search_text, clean_embed_text, raw_text_ref
                 FROM chunks
                 WHERE chunk_id = ?
@@ -202,6 +213,10 @@ class SQLiteDocumentRepository:
             summary_prompt_version=None,
             summary_status="built",
             summary_error_code=None,
+            summary_retry_count=0,
+            summary_last_attempt_at=None,
+            summary_next_retry_at=None,
+            summary_last_error_at=None,
         )
 
     def update_chunk_summary_state(
@@ -213,6 +228,10 @@ class SQLiteDocumentRepository:
         summary_prompt_version: str | None,
         summary_status: str,
         summary_error_code: str | None,
+        summary_retry_count: int,
+        summary_last_attempt_at: str | None,
+        summary_next_retry_at: str | None,
+        summary_last_error_at: str | None,
     ) -> None:
         with self.store.connect() as connection:
             connection.execute(
@@ -222,7 +241,11 @@ class SQLiteDocumentRepository:
                     summary_model = ?,
                     summary_prompt_version = ?,
                     summary_status = ?,
-                    summary_error_code = ?
+                    summary_error_code = ?,
+                    summary_retry_count = ?,
+                    summary_last_attempt_at = ?,
+                    summary_next_retry_at = ?,
+                    summary_last_error_at = ?
                 WHERE chunk_id = ?
                 """,
                 (
@@ -231,6 +254,10 @@ class SQLiteDocumentRepository:
                     summary_prompt_version,
                     summary_status,
                     summary_error_code,
+                    summary_retry_count,
+                    summary_last_attempt_at,
+                    summary_next_retry_at,
+                    summary_last_error_at,
                     chunk_id,
                 ),
             )
@@ -242,6 +269,7 @@ class SQLiteDocumentRepository:
                 """
                 SELECT chunk_id, doc_id, doc_version_id, doc_type, chunk_type, locator_json, metadata_digest_json,
                        safe_summary, summary_model, summary_prompt_version, summary_status, summary_error_code,
+                       summary_retry_count, summary_last_attempt_at, summary_next_retry_at, summary_last_error_at,
                        clean_search_text, clean_embed_text, raw_text_ref
                 FROM chunks
                 ORDER BY chunk_id
@@ -255,6 +283,7 @@ class SQLiteDocumentRepository:
                 """
                 SELECT chunk_id, doc_id, doc_version_id, doc_type, chunk_type, locator_json, metadata_digest_json,
                        safe_summary, summary_model, summary_prompt_version, summary_status, summary_error_code,
+                       summary_retry_count, summary_last_attempt_at, summary_next_retry_at, summary_last_error_at,
                        clean_search_text, clean_embed_text, raw_text_ref
                 FROM chunks
                 WHERE doc_version_id = ?
@@ -295,6 +324,7 @@ class SQLiteDocumentRepository:
         sql = """
             SELECT chunk_id, doc_id, doc_version_id, doc_type, chunk_type, locator_json, metadata_digest_json,
                    safe_summary, summary_model, summary_prompt_version, summary_status, summary_error_code,
+                   summary_retry_count, summary_last_attempt_at, summary_next_retry_at, summary_last_error_at,
                    clean_search_text, clean_embed_text, raw_text_ref
             FROM chunks
         """
@@ -313,6 +343,7 @@ class SQLiteDocumentRepository:
         sql = """
             SELECT c.chunk_id, c.doc_id, c.doc_version_id, c.doc_type, c.chunk_type, c.locator_json, c.metadata_digest_json,
                    c.safe_summary, c.summary_model, c.summary_prompt_version, c.summary_status, c.summary_error_code,
+                   c.summary_retry_count, c.summary_last_attempt_at, c.summary_next_retry_at, c.summary_last_error_at,
                    c.clean_search_text, c.clean_embed_text, c.raw_text_ref
             FROM chunk_fts f
             JOIN chunks c ON c.chunk_id = f.chunk_id
@@ -355,6 +386,7 @@ class SQLiteDocumentRepository:
         payload = dict(row)
         payload["locator"] = parse_json_blob(payload.pop("locator_json"))
         payload["metadata_digest"] = parse_json_blob(payload.pop("metadata_digest_json"))
+        payload["summary_retry_count"] = payload.get("summary_retry_count") or 0
         return ChunkRecord(**payload)
 
 

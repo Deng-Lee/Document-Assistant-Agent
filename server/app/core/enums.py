@@ -112,6 +112,7 @@ class JobStatus(str, Enum):
 
 class SummaryStatus(str, Enum):
     PENDING = "pending"
+    RUNNING = "running"
     BUILT = "built"
     FALLBACK = "fallback"
     FAILED = "failed"

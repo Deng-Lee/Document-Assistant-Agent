@@ -42,6 +42,10 @@ class DocumentRepository(Protocol):
         summary_prompt_version: str | None,
         summary_status: str,
         summary_error_code: str | None,
+        summary_retry_count: int,
+        summary_last_attempt_at: str | None,
+        summary_next_retry_at: str | None,
+        summary_last_error_at: str | None,
     ) -> None: ...
 
     def list_chunks(self) -> list[ChunkRecord]: ...
