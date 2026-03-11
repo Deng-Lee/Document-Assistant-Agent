@@ -18,6 +18,18 @@ class _UnavailableReranker:
         raise CrossEncoderUnavailableError("missing_api_key")
 
 
+class _StubHFBackend:
+    model_name = "stub-local-cross-encoder"
+    is_ready = True
+    missing_dependencies: list[str] = []
+
+    def score(self, query_text, candidates):
+        return {
+            candidate.chunk_id: 0.99 if "tripod post" in candidate.text.lower() else 0.25
+            for candidate in candidates
+        }
+
+
 class RetrievalTests(unittest.TestCase):
     def setUp(self) -> None:
         activate_test_profile("fake")
@@ -87,6 +99,39 @@ class RetrievalTests(unittest.TestCase):
             self.assertEqual(outcome.retrieval_log.rerank_status, "success")
             self.assertEqual(outcome.retrieval_log.rerank_provider_name, "deterministic_mock_cross_encoder_v1")
             self.assertTrue(any(item.rank_signals.cross_encoder_score is not None for item in outcome.items))
+            self.assertEqual(str(outcome.items[0].metadata_digest.date), "2026-03-04")
+
+    def test_real_profile_hf_cross_encoder_reranks_candidates(self) -> None:
+        with TemporaryDirectory() as tmp:
+            repo, _file_store, _ingestion, _results = build_ingested_stack(tmp, include_bjj=True, include_notes=False)
+
+            from server.app.retrieval import RetrievalService
+            from server.app.retrieval.reranker import HFCrossEncoderReranker
+
+            runtime_config = RuntimeConfigSnapshot(
+                reranker=RerankerConfig(
+                    enabled=True,
+                    provider="huggingface",
+                    model="stub-local-cross-encoder",
+                    candidate_pool_multiplier=3,
+                    max_candidates=24,
+                )
+            )
+            outcome = RetrievalService(
+                repo,
+                runtime_config=runtime_config,
+                reranker=HFCrossEncoderReranker(runtime_config, backend=_StubHFBackend()),
+            ).retrieve(
+                query_text="tripod post inside elbow recovery",
+                mode="full",
+                top_k=3,
+            )
+
+            self.assertTrue(outcome.retrieval_log.rerank_applied)
+            self.assertEqual(outcome.retrieval_log.rerank_status, "success")
+            self.assertEqual(outcome.retrieval_log.rerank_provider_name, "hf_cross_encoder_v1")
+            self.assertEqual(outcome.retrieval_log.rerank_model, "stub-local-cross-encoder")
+            self.assertGreater(outcome.items[0].rank_signals.cross_encoder_score, 0.9)
             self.assertEqual(str(outcome.items[0].metadata_digest.date), "2026-03-04")
 
     def test_reranker_provider_unavailable_falls_back_without_scores(self) -> None:

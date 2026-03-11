@@ -76,10 +76,12 @@ def main() -> None:
             real_state = create_app_state(real_root)
             retrieval_status = real_state.retrieval_service.provider_status()
             assert retrieval_status["profile_name"] == "real"
-            assert retrieval_status["provider_name"] == "OpenAICrossEncoderReranker"
-            assert retrieval_status["configured"] is True
-            assert retrieval_status["model"] == "gpt-4.1-mini"
-            assert retrieval_status["base_url"] == "https://smoke.example.invalid/v1"
+            assert retrieval_status["provider_name"] == "HFCrossEncoderReranker"
+            assert retrieval_status["configured"] is False
+            assert retrieval_status["model"] == "BAAI/bge-reranker-base"
+            assert retrieval_status["base_url"] is None
+            assert "torch" in retrieval_status["missing_dependencies"]
+            assert "transformers" in retrieval_status["missing_dependencies"]
             print("real_retrieval_reranker_smoke_ok")
             replan_status = real_state.orchestrator_service.replanner.provider_status()
             assert replan_status["profile_name"] == "real"

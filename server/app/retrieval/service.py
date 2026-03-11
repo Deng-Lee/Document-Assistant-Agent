@@ -32,7 +32,7 @@ from .reranker import (
     CrossEncoderSchemaError,
     CrossEncoderUnavailableError,
     DeterministicMockCrossEncoderReranker,
-    OpenAICrossEncoderReranker,
+    HFCrossEncoderReranker,
     RerankResult,
     build_cross_encoder_candidates,
 )
@@ -243,6 +243,7 @@ class RetrievalService:
             "base_url": getattr(transport, "base_url", None),
             "model": getattr(self.reranker, "model_name", None),
             "enabled": self.runtime_config.reranker.enabled,
+            "missing_dependencies": list(getattr(self.reranker, "missing_dependencies", [])),
         }
 
     def _run_rerank(self, query_text: str, fused_chunks: list[ChunkRecord], top_k: int) -> RerankResult:
@@ -308,8 +309,8 @@ class RetrievalService:
             return DeterministicMockCrossEncoderReranker(
                 model_name=runtime_config.reranker.model or "mock-cross-encoder-v1"
             )
-        if runtime_config.reranker.provider == "openai":
-            return OpenAICrossEncoderReranker(runtime_config)
+        if runtime_config.reranker.provider in {"huggingface", "hf_cross_encoder"}:
+            return HFCrossEncoderReranker(runtime_config)
         return None
 
     @staticmethod

@@ -42,6 +42,7 @@ def main() -> None:
         print(f"retrieval_reranker_configured={retrieval_status['configured']}")
         print(f"retrieval_reranker_model={retrieval_status['model']}")
         print(f"retrieval_reranker_base_url={retrieval_status['base_url']}")
+        print(f"retrieval_reranker_missing_dependencies={','.join(retrieval_status['missing_dependencies'])}")
         print(f"replan_provider_profile={replan_status['profile_name']}")
         print(f"replan_provider_name={replan_status['provider_name']}")
         print(f"replan_provider_configured={replan_status['configured']}")

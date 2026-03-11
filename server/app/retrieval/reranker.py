@@ -8,14 +8,6 @@ from typing import Any, Protocol
 from pydantic import Field, ValidationError
 
 from server.app.core import ChunkMetadataDigest, ChunkRecord, PDABaseModel, RuntimeConfigSnapshot
-from server.app.core.openai_chat import (
-    ChatCompletionTransport,
-    OpenAIChatCompletionTransport,
-    OpenAITransportError,
-    extract_chat_completion_text,
-    resolve_openai_api_key,
-    resolve_openai_base_url,
-)
 
 
 class CrossEncoderUnavailableError(RuntimeError):
@@ -70,6 +62,14 @@ class CrossEncoderReranker(Protocol):
     def rerank(self, query_text: str, candidates: list[CrossEncoderCandidate]) -> RerankResult: ...
 
 
+class CrossEncoderBackend(Protocol):
+    model_name: str
+    is_ready: bool
+    missing_dependencies: list[str]
+
+    def score(self, query_text: str, candidates: list[CrossEncoderCandidate]) -> dict[str, float]: ...
+
+
 class DeterministicMockCrossEncoderReranker:
     provider_name = "deterministic_mock_cross_encoder_v1"
 
@@ -104,30 +104,107 @@ class DeterministicMockCrossEncoderReranker:
         )
 
 
-class OpenAICrossEncoderReranker:
-    provider_name = "openai_cross_encoder_v1"
+class TransformersCrossEncoderBackend:
+    def __init__(self, model_name: str):
+        self.model_name = model_name
+        self._tokenizer = None
+        self._model = None
+        self._torch = None
+        self.missing_dependencies = self._resolve_missing_dependencies()
+
+    @property
+    def is_ready(self) -> bool:
+        return not self.missing_dependencies
+
+    def score(self, query_text: str, candidates: list[CrossEncoderCandidate]) -> dict[str, float]:
+        if not self.is_ready:
+            raise CrossEncoderUnavailableError(
+                "missing_dependencies:" + ",".join(self.missing_dependencies)
+            )
+        if not candidates:
+            return {}
+        torch = self._load_torch()
+        tokenizer = self._load_tokenizer()
+        model = self._load_model()
+        pairs = [(query_text, _candidate_text(candidate)) for candidate in candidates]
+        encoded = tokenizer(
+            pairs,
+            padding=True,
+            truncation=True,
+            return_tensors="pt",
+            max_length=512,
+        )
+        model.eval()
+        with torch.no_grad():
+            outputs = model(**encoded)
+        logits = outputs.logits
+        if len(logits.shape) == 1:
+            values = logits.tolist()
+            normalized = [_sigmoid(value) for value in values]
+        elif logits.shape[-1] == 1:
+            values = logits.squeeze(-1).tolist()
+            normalized = [_sigmoid(value) for value in values]
+        else:
+            probabilities = torch.softmax(logits, dim=-1)[:, -1].tolist()
+            normalized = [float(value) for value in probabilities]
+        return {
+            candidate.chunk_id: round(float(score), 6)
+            for candidate, score in zip(candidates, normalized, strict=False)
+        }
+
+    def _resolve_missing_dependencies(self) -> list[str]:
+        missing: list[str] = []
+        try:
+            import torch  # noqa: F401
+        except ImportError:
+            missing.append("torch")
+        try:
+            import transformers  # noqa: F401
+        except ImportError:
+            missing.append("transformers")
+        return missing
+
+    def _load_torch(self):
+        if self._torch is None:
+            import torch
+
+            self._torch = torch
+        return self._torch
+
+    def _load_tokenizer(self):
+        if self._tokenizer is None:
+            from transformers import AutoTokenizer
+
+            self._tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+        return self._tokenizer
+
+    def _load_model(self):
+        if self._model is None:
+            from transformers import AutoModelForSequenceClassification
+
+            self._model = AutoModelForSequenceClassification.from_pretrained(self.model_name)
+        return self._model
+
+
+class HFCrossEncoderReranker:
+    provider_name = "hf_cross_encoder_v1"
 
     def __init__(
         self,
         runtime_config: RuntimeConfigSnapshot,
-        api_key: str | None = None,
-        transport: ChatCompletionTransport | None = None,
+        backend: CrossEncoderBackend | None = None,
     ):
         self.runtime_config = runtime_config
-        self.api_key = resolve_openai_api_key(api_key)
         self.model_name = runtime_config.reranker.model or runtime_config.model_routing.base_model
-        self.transport = transport or (
-            OpenAIChatCompletionTransport(
-                api_key=self.api_key,
-                base_url=resolve_openai_base_url(),
-            )
-            if self.api_key
-            else None
-        )
+        self.backend = backend or TransformersCrossEncoderBackend(self.model_name)
 
     @property
     def is_ready(self) -> bool:
-        return bool(self.api_key and self.transport is not None)
+        return bool(self.backend.is_ready)
+
+    @property
+    def missing_dependencies(self) -> list[str]:
+        return list(getattr(self.backend, "missing_dependencies", []))
 
     def rerank(self, query_text: str, candidates: list[CrossEncoderCandidate]) -> RerankResult:
         if not candidates:
@@ -140,21 +217,14 @@ class OpenAICrossEncoderReranker:
                 ordered_chunk_ids=[],
                 scores_by_chunk={},
             )
-        if not self.api_key or self.transport is None:
-            raise CrossEncoderUnavailableError("missing_openai_api_key")
-        request_payload = _build_openai_payload(self.runtime_config, self.model_name, query_text, candidates)
         try:
-            response = self.transport.create_chat_completion(request_payload)
-            content = extract_chat_completion_text(response)
-        except OpenAITransportError as exc:
+            scores_by_chunk = self.backend.score(query_text, candidates)
+        except CrossEncoderUnavailableError:
+            raise
+        except OSError as exc:
+            raise CrossEncoderUnavailableError(f"model_load_error:{exc}") from exc
+        except Exception as exc:
             raise CrossEncoderError(str(exc)) from exc
-        try:
-            parsed = CrossEncoderResponse(**json.loads(content))
-        except json.JSONDecodeError as exc:
-            raise CrossEncoderSchemaError("invalid_json_response") from exc
-        except ValidationError as exc:
-            raise CrossEncoderSchemaError("invalid_cross_encoder_schema") from exc
-        scores_by_chunk = {item.chunk_id: item.score for item in parsed.scores}
         missing = [candidate.chunk_id for candidate in candidates if candidate.chunk_id not in scores_by_chunk]
         if missing:
             raise CrossEncoderSchemaError("missing_candidate_scores")
@@ -196,59 +266,24 @@ def build_cross_encoder_candidates(chunks: list[ChunkRecord]) -> list[CrossEncod
     ]
 
 
-def _build_openai_payload(
-    runtime_config: RuntimeConfigSnapshot,
-    model_name: str,
-    query_text: str,
-    candidates: list[CrossEncoderCandidate],
-) -> dict[str, Any]:
-    generation = runtime_config.generation.replan
-    candidate_payload = [
-        {
-            "chunk_id": candidate.chunk_id,
-            "doc_type": candidate.doc_type,
-            "safe_summary": candidate.safe_summary,
-            "text": candidate.text,
-            "metadata": _metadata_payload(candidate.metadata_digest),
-        }
-        for candidate in candidates
-    ]
-    return {
-        "model": model_name,
-        "messages": [
-            {"role": "system", "content": _system_prompt()},
-            {
-                "role": "user",
-                "content": json.dumps(
-                    {
-                        "query_text": query_text,
-                        "candidates": candidate_payload,
-                    },
-                    ensure_ascii=False,
-                ),
-            },
-        ],
-        "temperature": 0.0,
-        "top_p": generation.get("top_p", 1.0),
-        "max_tokens": min(int(generation.get("max_tokens", 800)), 1200),
-        "response_format": {"type": "json_object"},
-    }
-
-
-def _system_prompt() -> str:
-    return (
-        "You are a retrieval cross-encoder reranker. "
-        "Score each candidate chunk for direct relevance to the query from 0.0 to 1.0. "
-        "Return exactly one JSON object with key `scores`, containing an array of "
-        "{chunk_id, score}. Score every candidate once. Higher is better. "
-        "Use only the candidate text, safe_summary, and metadata. "
-        "Do not explain the scores."
-    )
-
-
 def _metadata_payload(metadata: ChunkMetadataDigest) -> dict[str, Any]:
     data = metadata.model_dump(mode="json") if hasattr(metadata, "model_dump") else metadata.dict()
     return {key: value for key, value in data.items() if value not in (None, "", [], {})}
+
+
+def _candidate_text(candidate: CrossEncoderCandidate) -> str:
+    metadata = _metadata_payload(candidate.metadata_digest)
+    metadata_text = " ".join(f"{key}:{value}" for key, value in metadata.items())
+    body = " ".join(
+        part
+        for part in (
+            candidate.safe_summary,
+            candidate.text,
+            metadata_text,
+        )
+        if part
+    )
+    return body[:1600]
 
 
 def _deterministic_overlap_score(query_text: str, candidate: CrossEncoderCandidate) -> float:
@@ -276,3 +311,7 @@ def _deterministic_overlap_score(query_text: str, candidate: CrossEncoderCandida
 
 def _tokenize(text: str) -> set[str]:
     return {token for token in re.split(r"[^0-9a-zA-Z\u4e00-\u9fff]+", text.lower()) if token}
+
+
+def _sigmoid(value: float) -> float:
+    return 1.0 / (1.0 + pow(2.718281828459045, -value))

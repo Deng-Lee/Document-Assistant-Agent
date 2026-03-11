@@ -16,6 +16,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+rerank = [
+  "torch>=2.2,<3.0",
+  "transformers>=4.40,<5.0",
+]
 training = [
   "accelerate>=0.28,<2.0",
   "datasets>=2.18,<4.0",
