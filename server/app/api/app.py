@@ -51,6 +51,7 @@ from .models import (
     IngestTextRequest,
     MaintenanceReembedRequest,
     MaintenanceReindexRequest,
+    MaintenanceSafeSummaryRetryRequest,
     NotesRecordRequest,
     ProfilePatchRequest,
     ReplayRequest,
@@ -78,6 +79,8 @@ from .responses import (
     ReplayTraceResponse,
     RetrieveResponse,
     RunJobResponse,
+    SafeSummaryChunkStatusItem,
+    SafeSummaryChunkStatusResponse,
     SFTExportResponse,
     SFTTrainResponse,
     TraceSummaryItem,
@@ -290,6 +293,44 @@ def create_app(root_dir: str | Path | None = None) -> FastAPI:
         )
         return EnqueueJobResponse(job=job)
 
+    @app.get("/api/chunks/safe_summary", response_model=SafeSummaryChunkStatusResponse)
+    def list_safe_summary_chunks(
+        scope: str = "all",
+        doc_version_id: str | None = None,
+        doc_id: str | None = None,
+        summary_statuses: str | None = None,
+    ) -> SafeSummaryChunkStatusResponse:
+        state = _state(app)
+        statuses = [item.strip().lower() for item in (summary_statuses or "").split(",") if item.strip()]
+        try:
+            versions, chunks = state.job_service.list_safe_summary_chunks(
+                scope=scope,
+                summary_statuses=statuses or None,
+                doc_version_id=doc_version_id,
+                doc_id=doc_id,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return SafeSummaryChunkStatusResponse(
+            scope=scope,
+            doc_version_ids=[version.doc_version_id for version in versions],
+            total_count=len(chunks),
+            items=[
+                SafeSummaryChunkStatusItem(
+                    chunk_id=chunk.chunk_id,
+                    doc_id=chunk.doc_id,
+                    doc_version_id=chunk.doc_version_id,
+                    summary_status=chunk.summary_status.value,
+                    summary_error_code=chunk.summary_error_code,
+                    summary_retry_count=chunk.summary_retry_count,
+                    summary_last_attempt_at=chunk.summary_last_attempt_at.isoformat() if chunk.summary_last_attempt_at else None,
+                    summary_next_retry_at=chunk.summary_next_retry_at.isoformat() if chunk.summary_next_retry_at else None,
+                    summary_last_error_at=chunk.summary_last_error_at.isoformat() if chunk.summary_last_error_at else None,
+                )
+                for chunk in chunks
+            ],
+        )
+
     @app.post("/api/maintenance/reindex", response_model=MaintenanceEnqueueResponse)
     def enqueue_reindex(request: MaintenanceReindexRequest) -> MaintenanceEnqueueResponse:
         state = _state(app)
@@ -331,6 +372,27 @@ def create_app(root_dir: str | Path | None = None) -> FastAPI:
             jobs=jobs,
             dry_run=request.dry_run,
             embedding_version_id=request.embedding_version_id,
+        )
+
+    @app.post("/api/maintenance/safe_summary/retry", response_model=MaintenanceEnqueueResponse)
+    def enqueue_safe_summary_retry(request: MaintenanceSafeSummaryRetryRequest) -> MaintenanceEnqueueResponse:
+        state = _state(app)
+        try:
+            versions, affected_chunks, jobs = state.job_service.enqueue_safe_summary_retry_jobs(
+                scope=request.scope,
+                summary_statuses=request.summary_statuses,
+                doc_version_id=request.doc_version_id,
+                doc_id=request.doc_id,
+                dry_run=request.dry_run,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return MaintenanceEnqueueResponse(
+            scope=request.scope,
+            doc_version_ids=[version.doc_version_id for version in versions],
+            affected_chunk_count=affected_chunks,
+            jobs=jobs,
+            dry_run=request.dry_run,
         )
 
     @app.get("/api/traces/{trace_id}", response_model=TraceRecord)

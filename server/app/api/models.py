@@ -97,5 +97,13 @@ class MaintenanceReembedRequest(PDABaseModel):
     dry_run: bool = False
 
 
+class MaintenanceSafeSummaryRetryRequest(PDABaseModel):
+    scope: str
+    doc_version_id: str | None = None
+    doc_id: str | None = None
+    summary_statuses: list[str] = Field(default_factory=lambda: ["failed", "fallback"])
+    dry_run: bool = False
+
+
 class SFTTrainAPIRequest(PolicyTrainRequest):
     pass

@@ -191,6 +191,73 @@ class JobService:
         ]
         return versions, affected_chunks, jobs
 
+    def list_safe_summary_chunks(
+        self,
+        *,
+        scope: str,
+        summary_statuses: list[str] | None = None,
+        doc_version_id: str | None = None,
+        doc_id: str | None = None,
+    ):
+        versions = self.resolve_doc_version_scope(
+            scope=scope,
+            doc_version_id=doc_version_id,
+            doc_id=doc_id,
+        )
+        allowed = {status.lower() for status in (summary_statuses or []) if status}
+        chunks = []
+        for version in versions:
+            for chunk in self.document_repository.list_chunks_for_doc_version(version.doc_version_id):
+                if allowed and chunk.summary_status.value.lower() not in allowed:
+                    continue
+                chunks.append(chunk)
+        chunks.sort(key=lambda item: (item.doc_version_id, item.chunk_id))
+        return versions, chunks
+
+    def enqueue_safe_summary_retry_jobs(
+        self,
+        *,
+        scope: str,
+        summary_statuses: list[str] | None = None,
+        doc_version_id: str | None = None,
+        doc_id: str | None = None,
+        dry_run: bool = False,
+    ) -> tuple[list[DocVersionRecord], int, list[JobRecord]]:
+        versions, chunks = self.list_safe_summary_chunks(
+            scope=scope,
+            summary_statuses=summary_statuses,
+            doc_version_id=doc_version_id,
+            doc_id=doc_id,
+        )
+        if dry_run:
+            return versions, len(chunks), []
+        jobs: list[JobRecord] = []
+        for chunk in chunks:
+            self.document_repository.update_chunk_summary_state(
+                chunk.chunk_id,
+                safe_summary=chunk.safe_summary or "",
+                summary_model=self.runtime_config.model_routing.base_model,
+                summary_prompt_version=self.runtime_config.prompt_versions.safe_summary,
+                summary_status=SummaryStatus.PENDING.value,
+                summary_error_code=None,
+                summary_retry_count=0,
+                summary_last_attempt_at=None,
+                summary_next_retry_at=None,
+                summary_last_error_at=None,
+            )
+            jobs.append(
+                self.enqueue(
+                    "safe_summary_build",
+                    {
+                        "chunk_id": chunk.chunk_id,
+                        "doc_version_id": chunk.doc_version_id,
+                        "summary_prompt_version": self.runtime_config.prompt_versions.safe_summary,
+                        "summary_model": self.runtime_config.model_routing.base_model,
+                    },
+                )
+            )
+        return versions, len(chunks), jobs
+
     def run_next(self, job_types: list[str] | None = None) -> JobRunResult | None:
         job = self.job_repository.claim_next_job(job_types=job_types)
         if job is None:

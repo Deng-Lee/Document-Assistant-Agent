@@ -97,6 +97,25 @@ class MaintenanceEnqueueResponse(PDABaseModel):
     embedding_version_id: str | None = None
 
 
+class SafeSummaryChunkStatusItem(PDABaseModel):
+    chunk_id: str
+    doc_id: str
+    doc_version_id: str
+    summary_status: str
+    summary_error_code: str | None = None
+    summary_retry_count: int = 0
+    summary_last_attempt_at: str | None = None
+    summary_next_retry_at: str | None = None
+    summary_last_error_at: str | None = None
+
+
+class SafeSummaryChunkStatusResponse(PDABaseModel):
+    scope: str
+    doc_version_ids: list[str] = Field(default_factory=list)
+    total_count: int = 0
+    items: list[SafeSummaryChunkStatusItem] = Field(default_factory=list)
+
+
 class TraceSummaryItem(PDABaseModel):
     trace_id: str
     created_at: str | None = None

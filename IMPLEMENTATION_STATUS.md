@@ -13,7 +13,7 @@
 | --- | --- | --- | --- |
 | Core Contracts & Schemas | `done` | core schema、runtime config、trace/eval/sft contracts 已落地 | 无关键断裂点 |
 | Storage Adapters | `done` | SQLite、FTS5、filestore、trace store、jobs、profiles、真实 Chroma 已接通 | 无关键断裂点 |
-| Ingestion + safe_summary | `partial` | text/file/dir/record ingest、provider-backed safe_summary job、summary metadata、显式 `FAILED` 状态、retry 元数据、自动重试、指数退避、rebuild API 已接通 | 失败项筛选与完整 maintenance 批量运维闭环仍未完全收口 |
+| Ingestion + safe_summary | `done` | text/file/dir/record ingest、provider-backed safe_summary job、summary metadata、显式 `FAILED` 状态、retry 元数据、自动重试、指数退避、单 chunk rebuild、失败项查询与批量 retry 运维入口均已接通 | 无关键断裂点 |
 | Retrieval + Evidence Pack | `done` | structured + BM25 + dense + RRF + Evidence Pack 已接通，`real` profile 的主 rerank 路径已换成真实 HF cross-encoder backend，且 rerank 运行时依赖已提升为默认开发环境依赖 | 无关键断裂点 |
 | Orchestrator | `done` | probe、plan_check、clarify、fake mock replan、real-profile OpenAI-compatible replan provider、fallback telemetry 已接通 | 无关键断裂点 |
 | Agents | `done` | BJJ coach、NOTES literary 的 `top-1 raw_excerpt + top-2/3 safe_summary` anchors pipeline、validator-safe path 已可运行 | 无关键断裂点 |

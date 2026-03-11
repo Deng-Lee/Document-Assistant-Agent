@@ -34,6 +34,7 @@ class APITests(unittest.TestCase):
                 IngestTextRequest,
                 MaintenanceReembedRequest,
                 MaintenanceReindexRequest,
+                MaintenanceSafeSummaryRetryRequest,
                 RetrieveRequest,
                 RunJobsRequest,
             )
@@ -55,6 +56,45 @@ class APITests(unittest.TestCase):
             rebuild_payload = dump_result(routes["/api/chunks/{chunk_id}/safe_summary/rebuild"](chunk_id))
             self.assertEqual(rebuild_payload["job"]["job_type"], "safe_summary_build")
             self.assertEqual(rebuild_payload["job"]["payload"]["chunk_id"], chunk_id)
+
+            app.state.pda.document_repository.update_chunk_summary_state(
+                chunk_id,
+                safe_summary="",
+                summary_model="test-model",
+                summary_prompt_version="safe_summary.v1",
+                summary_status="failed",
+                summary_error_code="provider_error:synthetic_failure",
+                summary_retry_count=2,
+                summary_last_attempt_at="2026-03-11T10:00:00",
+                summary_next_retry_at="2026-03-11T10:00:02",
+                summary_last_error_at="2026-03-11T10:00:00",
+            )
+            status_payload = dump_result(
+                routes["/api/chunks/safe_summary"](
+                    scope="doc_version_id",
+                    doc_version_id=ingest_payload["doc_version_id"],
+                    summary_statuses="failed,fallback",
+                )
+            )
+            self.assertEqual(status_payload["scope"], "doc_version_id")
+            self.assertEqual(status_payload["total_count"], 1)
+            self.assertEqual(status_payload["items"][0]["chunk_id"], chunk_id)
+            self.assertEqual(status_payload["items"][0]["summary_status"], "failed")
+
+            retry_payload = dump_result(
+                routes["/api/maintenance/safe_summary/retry"](
+                    MaintenanceSafeSummaryRetryRequest(
+                        scope="doc_version_id",
+                        doc_version_id=ingest_payload["doc_version_id"],
+                        summary_statuses=["failed"],
+                    )
+                )
+            )
+            self.assertEqual(retry_payload["affected_chunk_count"], 1)
+            self.assertEqual(len(retry_payload["jobs"]), 1)
+            retried_chunk = app.state.pda.document_repository.get_chunk(chunk_id)
+            self.assertEqual(retried_chunk.summary_status.value, "pending")
+            self.assertEqual(retried_chunk.summary_retry_count, 0)
 
             reindex_payload = dump_result(
                 routes["/api/maintenance/reindex"](

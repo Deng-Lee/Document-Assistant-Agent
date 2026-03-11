@@ -432,6 +432,27 @@ def main() -> None:
         assert reindex_result.job.status.value == "succeeded"
         assert reembed_result.job.status.value == "succeeded"
         assert any(note.startswith("reembedded_chunks=") for note in reembed_result.notes)
+        repo2.update_chunk_summary_state(
+            first_chunk.chunk_id,
+            safe_summary="",
+            summary_model="test-model",
+            summary_prompt_version="safe_summary.v1",
+            summary_status="failed",
+            summary_error_code="provider_error:synthetic_failure",
+            summary_retry_count=2,
+            summary_last_attempt_at="2026-03-11T10:00:00",
+            summary_next_retry_at="2026-03-11T10:00:02",
+            summary_last_error_at="2026-03-11T10:00:00",
+        )
+        retry_versions, retry_chunks, retry_jobs = jobs.enqueue_safe_summary_retry_jobs(
+            scope="doc_version_id",
+            doc_version_id=first_chunk.doc_version_id,
+            summary_statuses=["failed"],
+        )
+        assert retry_versions
+        assert retry_chunks == 1
+        assert len(retry_jobs) == 1
+        assert repo2.get_chunk(first_chunk.chunk_id).summary_status.value == "pending"
         print("jobs_smoke_ok")
 
         api_root = root / "api_app"
