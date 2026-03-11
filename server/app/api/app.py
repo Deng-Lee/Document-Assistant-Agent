@@ -347,6 +347,7 @@ def create_app(root_dir: str | Path | None = None) -> FastAPI:
             bjj_coach_service=state.bjj_coach_service,
             literary_service=state.literary_service,
             use_frozen_evidence=request.use_frozen_evidence,
+            override_generation_config=request.override_generation_config,
         )
         return ReplayTraceResponse(trace_id=replayed_trace.trace_id, final_answer=final_answer)
 

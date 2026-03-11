@@ -698,6 +698,39 @@ class _StubInferenceBackend:
             else:
                 os.environ["PDA_MODEL_PROFILE_CONFIG_DIR"] = original
 
+    def test_replay_override_generation_config_updates_runtime_snapshot_and_request_log(self) -> None:
+        with TemporaryDirectory() as tmp:
+            app = create_test_app(tmp)
+            routes = endpoint_map(app)
+
+            from server.app.api.models import ChatTurnRequest, IngestTextRequest, ReplayRequest
+
+            routes["/api/ingest/text"](
+                IngestTextRequest(markdown_text=sample_bjj_markdown(), source_path_hint="bjj.md")
+            )
+            first_turn = dump_result(routes["/api/chat/turn"](ChatTurnRequest(user_message="龟防怎么破解？我总是被人拉回去。")))
+
+            replay_payload = dump_result(
+                routes["/api/replay/{trace_id}"](
+                    first_turn["trace_id"],
+                    ReplayRequest(
+                        override_generation_config={
+                            "bjj": {"max_tokens": 321, "temperature": 0.2},
+                        }
+                    ),
+                )
+            )
+            replay_trace = dump_result(routes["/api/traces/{trace_id}"](replay_payload["trace_id"]))
+
+            self.assertEqual(
+                replay_trace["request_log"]["override_generation_config"],
+                {"bjj": {"max_tokens": 321, "temperature": 0.2}},
+            )
+            self.assertEqual(replay_trace["runtime_config_snapshot"]["generation"]["bjj"]["max_tokens"], 321)
+            self.assertEqual(replay_trace["runtime_config_snapshot"]["generation"]["bjj"]["temperature"], 0.2)
+            replay_events = [event for event in replay_trace["events"] if event["name"] == "replay.override_applied"]
+            self.assertEqual(len(replay_events), 1)
+
 
 def parse_sse_events(body: str) -> list[dict]:
     events: list[dict] = []

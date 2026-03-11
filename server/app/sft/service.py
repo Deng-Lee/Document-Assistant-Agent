@@ -332,14 +332,24 @@ class SFTService:
         bjj_coach_service,
         literary_service,
         use_frozen_evidence: bool = True,
+        override_generation_config: dict[str, Any] | None = None,
     ) -> tuple[TraceRecord, object]:
         config = runtime_config or build_runtime_config()
+        effective_config = _apply_generation_overrides(config, override_generation_config)
         recorder = TraceRecorder(
-            runtime_config_snapshot=_copy_runtime_config(config, variant),
+            runtime_config_snapshot=_copy_runtime_config(effective_config, variant),
             conversation_id=source_trace.conversation_id,
         )
-        recorder.set_request_log(source_trace.request_log)
+        request_log = _copy_model(source_trace.request_log)
+        request_log.override_generation_config = _to_jsonable(override_generation_config or {})
+        recorder.set_request_log(request_log)
         recorder.set_retrieval_log(source_trace.retrieval_log)
+        if request_log.override_generation_config:
+            recorder.add_event(
+                "replay.override_applied",
+                override_generation_config=request_log.override_generation_config,
+                use_frozen_evidence=use_frozen_evidence,
+            )
 
         input_snapshot = self.resolve_replay_input_snapshot(source_trace, current_profile)
         replay_evidence = (
@@ -348,9 +358,15 @@ class SFTService:
             else source_trace.evidence_log
         )
         recorder.set_evidence_log(replay_evidence)
+        bjj_runtime_service = _with_runtime_config(bjj_coach_service, effective_config)
+        literary_runtime_service = _with_runtime_config(
+            literary_service,
+            effective_config,
+            document_repository=getattr(literary_service, "document_repository", None),
+        )
 
         if source_trace.request_log.task == "COACH_BJJ":
-            coach_outcome = bjj_coach_service.run(
+            coach_outcome = bjj_runtime_service.run(
                 BJJCoachInput(
                     query_original=input_snapshot.query_original,
                     query_clean=input_snapshot.query_clean,
@@ -366,7 +382,7 @@ class SFTService:
                 variant,
                 input_snapshot,
                 baseline_output,
-                runtime_config=config,
+                runtime_config=effective_config,
                 prompt_version=source_trace.generation_log.prompt_version,
                 prompt_hash=source_trace.generation_log.prompt_hash,
                 policy_input_output=source_trace.generation_log.output or baseline_output,
@@ -374,12 +390,12 @@ class SFTService:
             final_answer = _coerce_bjj_answer(final_output)
             validator_report = validate_bjj_answer(final_answer, {item.evidence_id for item in replay_evidence.items})
         else:
-            final_answer = literary_service.run(input_snapshot.query_original, replay_evidence)
+            final_answer = literary_runtime_service.run(input_snapshot.query_original, replay_evidence)
             final_output, model_ref = self.apply_policy_variant(
                 variant,
                 input_snapshot,
                 _to_jsonable(final_answer),
-                runtime_config=config,
+                runtime_config=effective_config,
                 prompt_version=source_trace.generation_log.prompt_version,
                 prompt_hash=source_trace.generation_log.prompt_hash,
                 policy_input_output=source_trace.generation_log.output or _to_jsonable(final_answer),
@@ -389,7 +405,7 @@ class SFTService:
 
         recorder.set_generation_log(
             GenerationLog(
-                provider=config.model_routing.provider,
+                provider=effective_config.model_routing.provider,
                 model=model_ref,
                 prompt_version=source_trace.generation_log.prompt_version,
                 prompt_snapshot=build_prompt_snapshot(input_snapshot),
@@ -615,6 +631,33 @@ def _copy_runtime_config(runtime_config: RuntimeConfigSnapshot, variant: ModelVa
     if hasattr(runtime_config, "model_copy"):
         return runtime_config.model_copy(update={"policy_version": variant}, deep=True)
     return runtime_config.copy(update={"policy_version": variant}, deep=True)
+
+
+def _apply_generation_overrides(
+    runtime_config: RuntimeConfigSnapshot,
+    override_generation_config: dict[str, Any] | None,
+) -> RuntimeConfigSnapshot:
+    overrides = override_generation_config or {}
+    if not overrides:
+        return _copy_model(runtime_config)
+    generation = _copy_model(runtime_config.generation)
+    for task_name in ("bjj", "literary", "replan", "safe_summary"):
+        task_override = overrides.get(task_name)
+        if not isinstance(task_override, dict):
+            continue
+        current = getattr(generation, task_name)
+        setattr(generation, task_name, {**dict(current), **task_override})
+    if hasattr(runtime_config, "model_copy"):
+        return runtime_config.model_copy(update={"generation": generation}, deep=True)
+    return runtime_config.copy(update={"generation": generation}, deep=True)
+
+
+def _with_runtime_config(service, runtime_config: RuntimeConfigSnapshot, **extra_kwargs):
+    init_kwargs = {"runtime_config": runtime_config, **extra_kwargs}
+    try:
+        return service.__class__(**init_kwargs)
+    except TypeError:
+        return service
 
 
 def _copy_model(model):

@@ -32,6 +32,7 @@ class RequestLog(PDABaseModel):
     domain: str | None = None
     task: str | None = None
     profile_version_id: str | None = None
+    override_generation_config: dict[str, Any] = Field(default_factory=dict)
     confirmed_slots: dict[str, str] = Field(default_factory=dict)
     plan_check: PlanCheck | None = None
     execution_plan: ExecutionPlan | None = None
