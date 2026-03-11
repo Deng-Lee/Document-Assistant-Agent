@@ -91,9 +91,10 @@ def main() -> None:
             print("real_replan_provider_smoke_ok")
             evaluation_status = real_state.evaluation_service.provider_status()
             assert evaluation_status["ragas"]["profile_name"] == "real"
-            assert evaluation_status["ragas"]["evaluator_name"] == "openai_ragas_proxy_v1"
-            assert evaluation_status["ragas"]["configured"] is True
+            assert evaluation_status["ragas"]["evaluator_name"] == "ragas_external_v1"
+            assert evaluation_status["ragas"]["configured"] is False
             assert evaluation_status["ragas"]["base_url"] == "https://smoke.example.invalid/v1"
+            assert "ragas" in evaluation_status["ragas"]["missing_dependencies"]
             assert evaluation_status["judge"]["profile_name"] == "real"
             assert evaluation_status["judge"]["evaluator_name"] == "openai_judge_v1"
             assert evaluation_status["judge"]["configured"] is True

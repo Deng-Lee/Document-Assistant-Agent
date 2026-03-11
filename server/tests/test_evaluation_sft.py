@@ -154,7 +154,7 @@ class EvaluationAndSFTTests(unittest.TestCase):
                 repo_root=tmp,
                 ragas_runner=lambda cases, traces: EvalStageResult(
                     status=EvalStageStatus.SUCCEEDED,
-                    evaluator="openai_ragas_proxy_v1",
+                    evaluator="ragas_external_v1",
                     sample_count=len(traces),
                     metrics=[
                         EvalMetricValue(metric=EvalMetricName.FAITHFULNESS, value=0.9),
@@ -199,32 +199,28 @@ class EvaluationAndSFTTests(unittest.TestCase):
             )
 
             from server.app.core import EvalRunRequest, build_runtime_config
-            from server.app.evaluation import EvaluationService, OpenAIExternalJudgeEvaluator, OpenAIExternalRagasEvaluator
+            from server.app.evaluation import EvaluationService, OpenAIExternalJudgeEvaluator, RagasExternalEvaluator
 
             runtime_config = build_runtime_config("real")
+            ragas_backend = _StubRagasBackend(
+                model_name=runtime_config.model_routing.base_model,
+                embedding_model_name=runtime_config.model_routing.embedding_model,
+                response_map={
+                    "case_ext": {
+                        "faithfulness": 0.91,
+                        "answer_relevancy": 0.83,
+                        "context_precision": 0.79,
+                        "context_recall": 0.88,
+                    }
+                },
+                base_url="https://example.invalid/v1",
+            )
             service = EvaluationService(
                 trace_store=trace_store,
                 golden_case_repository=eval_repo,
                 repo_root=tmp,
                 runtime_config=runtime_config,
-                ragas_evaluator=OpenAIExternalRagasEvaluator(
-                    runtime_config=runtime_config,
-                    api_key="test-key",
-                    transport=_StubEvalTransport(
-                        {
-                            "choices": [
-                                {
-                                    "message": {
-                                        "content": (
-                                            '{"faithfulness":0.91,"answer_relevancy":0.83,'
-                                            '"context_precision":0.79,"context_recall":0.88}'
-                                        )
-                                    }
-                                }
-                            ]
-                        }
-                    ),
-                ),
+                ragas_evaluator=RagasExternalEvaluator(runtime_config=runtime_config, backend=ragas_backend),
                 judge_evaluator=OpenAIExternalJudgeEvaluator(
                     runtime_config=runtime_config,
                     api_key="test-key",
@@ -238,7 +234,7 @@ class EvaluationAndSFTTests(unittest.TestCase):
 
             self.assertEqual(result.run_status.value, "completed")
             self.assertEqual(result.ragas.status.value, "succeeded")
-            self.assertEqual(result.ragas.evaluator, "openai_ragas_proxy_v1")
+            self.assertEqual(result.ragas.evaluator, "ragas_external_v1")
             self.assertEqual(result.judge.status.value, "succeeded")
             self.assertEqual(result.judge.evaluator, "openai_judge_v1")
             metrics = {metric.metric.value: metric.value for metric in result.metrics}
@@ -246,7 +242,7 @@ class EvaluationAndSFTTests(unittest.TestCase):
             self.assertEqual(metrics["answer_relevancy"], 0.83)
             self.assertEqual(result.judge.details["score"], 0.87)
             status = service.provider_status()
-            self.assertEqual(status["ragas"]["evaluator_name"], "openai_ragas_proxy_v1")
+            self.assertEqual(status["ragas"]["evaluator_name"], "ragas_external_v1")
             self.assertTrue(status["ragas"]["configured"])
             self.assertEqual(status["judge"]["evaluator_name"], "openai_judge_v1")
             self.assertTrue(status["judge"]["configured"])
@@ -272,7 +268,7 @@ class EvaluationAndSFTTests(unittest.TestCase):
             )
 
             from server.app.core import EvalRunRequest, build_runtime_config
-            from server.app.evaluation import EvaluationService, OpenAIExternalJudgeEvaluator, OpenAIExternalRagasEvaluator
+            from server.app.evaluation import EvaluationService, OpenAIExternalJudgeEvaluator, RagasExternalEvaluator
 
             runtime_config = build_runtime_config("real")
             service = EvaluationService(
@@ -280,7 +276,14 @@ class EvaluationAndSFTTests(unittest.TestCase):
                 golden_case_repository=eval_repo,
                 repo_root=tmp,
                 runtime_config=runtime_config,
-                ragas_evaluator=OpenAIExternalRagasEvaluator(runtime_config=runtime_config, api_key=None, transport=None),
+                ragas_evaluator=RagasExternalEvaluator(
+                    runtime_config=runtime_config,
+                    backend=_UnavailableRagasBackend(
+                        model_name=runtime_config.model_routing.base_model,
+                        embedding_model_name=runtime_config.model_routing.embedding_model,
+                        reason="missing_openai_api_key",
+                    ),
+                ),
                 judge_evaluator=OpenAIExternalJudgeEvaluator(runtime_config=runtime_config, api_key=None, transport=None),
             )
 
@@ -291,6 +294,140 @@ class EvaluationAndSFTTests(unittest.TestCase):
             self.assertEqual(result.ragas.reason, "missing_openai_api_key")
             self.assertEqual(result.judge.status.value, "failed")
             self.assertEqual(result.judge.reason, "missing_openai_api_key")
+
+    def test_ragas_contexts_use_note_anchor_contract(self) -> None:
+        from server.app.core import (
+            EvidencePack,
+            EvidencePackItem,
+            EvalRunRequest,
+            EvalStageResult,
+            EvalStageStatus,
+            GenerationLog,
+            LineRange,
+            RankSignals,
+            RequestLog,
+            RetrievalLog,
+            RuntimeConfigSnapshot,
+            SourceLocator,
+            TraceRecord,
+        )
+        from server.app.core import ChunkMetadataDigest
+        from server.app.evaluation import EvaluationService, RagasExternalEvaluator
+
+        with TemporaryDirectory() as tmp:
+            activate_test_profile("real")
+            trace_store, eval_repo = _build_eval_stack(tmp)
+            trace = TraceRecord(
+                trace_id="trace_notes",
+                conversation_id="conv_notes",
+                runtime_config_snapshot=RuntimeConfigSnapshot(),
+                request_log=RequestLog(entrypoint="chat", domain="NOTES", task="COACH_LITERARY"),
+                retrieval_log=RetrievalLog(),
+                evidence_log=EvidencePack(
+                    items=[
+                        EvidencePackItem(
+                            evidence_id="chunk_notes_1",
+                            doc_id="doc_notes_1",
+                            doc_version_id="dv_notes_1",
+                            locator=SourceLocator(
+                                doc_version_id="dv_notes_1",
+                                source_path="notes.md",
+                                line_range=LineRange(start=3, end=5),
+                                char_range={"start": 20, "end": 80},
+                            ),
+                            safe_summary="图书馆像镜子一样折回到迷宫。",
+                            metadata_digest=ChunkMetadataDigest(heading_path=["Maze Draft"]),
+                            rank_signals=RankSignals(rrf_rank=1),
+                        )
+                    ]
+                ),
+                generation_log=GenerationLog(
+                    provider="mock",
+                    model="mock-literary-base",
+                    prompt_version="literary.v1",
+                    output={
+                        "text": "把镜子写成第二座图书馆。",
+                        "anchors": [
+                            {
+                                "anchor_type": "raw_excerpt",
+                                "doc_rank": 1,
+                                "evidence_id": "chunk_notes_1",
+                                "doc_version_id": "dv_notes_1",
+                                "locator": {
+                                    "doc_version_id": "dv_notes_1",
+                                    "source_path": "notes.md",
+                                    "line_range": {"start": 3, "end": 5},
+                                    "char_range": {"start": 20, "end": 80},
+                                },
+                                "citation": "dv_notes_1:3",
+                                "content": "A library can be a maze and a mirror.",
+                                "heading_path": ["Maze Draft"],
+                            },
+                            {
+                                "anchor_type": "safe_summary",
+                                "doc_rank": 2,
+                                "evidence_id": "chunk_notes_2",
+                                "doc_version_id": "dv_notes_2",
+                                "locator": {
+                                    "doc_version_id": "dv_notes_2",
+                                    "source_path": "notes-2.md",
+                                    "line_range": {"start": 7, "end": 9},
+                                    "char_range": {"start": 81, "end": 140},
+                                },
+                                "citation": "dv_notes_2:7",
+                                "content": "雨夜里的街道像第二份档案。",
+                                "heading_path": ["Night Walk"],
+                            },
+                        ],
+                    },
+                ),
+            )
+            trace_store.write_trace(trace)
+            _write_golden_set(
+                tmp,
+                "notes_suite",
+                [
+                    {
+                        "case_id": "case_notes",
+                        "query": "继续写迷宫和镜子",
+                        "domain": "NOTES",
+                        "trace_id": "trace_notes",
+                        "expected_behavior": {"must_reference_anchor": True},
+                        "expected_chunk_ids": ["chunk_notes_1"],
+                    }
+                ],
+            )
+            backend = _StubRagasBackend(
+                model_name="qwen-plus",
+                embedding_model_name="text-embedding-v4",
+                response_map={
+                    "case_notes": {
+                        "faithfulness": 0.75,
+                        "answer_relevancy": 0.88,
+                        "context_precision": 0.91,
+                        "context_recall": 0.73,
+                    }
+                },
+            )
+            service = EvaluationService(
+                trace_store=trace_store,
+                golden_case_repository=eval_repo,
+                repo_root=tmp,
+                runtime_config=RuntimeConfigSnapshot(),
+                ragas_evaluator=RagasExternalEvaluator(runtime_config=RuntimeConfigSnapshot(), backend=backend),
+                judge_runner=lambda cases, traces: EvalStageResult(
+                    status=EvalStageStatus.SKIPPED,
+                    evaluator="openai_judge_v1",
+                    reason="not_under_test",
+                    sample_count=0,
+                ),
+            )
+
+            result = service.run(EvalRunRequest(eval_set_id="notes_suite"))
+
+            self.assertEqual(result.ragas.status.value, "succeeded")
+            self.assertEqual(backend.calls[0].contexts[0], "raw_excerpt dv_notes_1:3: A library can be a maze and a mirror.")
+            self.assertEqual(backend.calls[0].contexts[1], "safe_summary dv_notes_2:7: 雨夜里的街道像第二份档案。")
 
     def test_sft_export_filters_and_builds_train_rows(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -491,6 +628,52 @@ class _StubEvalTransport:
     def create_chat_completion(self, payload):
         self.calls.append(payload)
         return self.response
+
+
+class _StubRagasBackend:
+    backend_name = "ragas_langchain_openai_v1"
+    is_ready = True
+    missing_dependencies: list[str] = []
+
+    def __init__(
+        self,
+        *,
+        model_name: str,
+        embedding_model_name: str,
+        response_map: dict[str, dict[str, float]],
+        base_url: str | None = None,
+    ):
+        self.model_name = model_name
+        self.embedding_model_name = embedding_model_name
+        self.response_map = response_map
+        self.base_url = base_url
+        self.calls = []
+
+    def score_cases(self, cases):
+        from server.app.evaluation.external_evaluators import RagasCaseScores
+
+        self.calls.extend(cases)
+        return {
+            case.case_id: RagasCaseScores(**self.response_map[case.case_id])
+            for case in cases
+        }
+
+
+class _UnavailableRagasBackend:
+    backend_name = "ragas_langchain_openai_v1"
+    is_ready = False
+    missing_dependencies: list[str] = []
+    base_url = None
+
+    def __init__(self, *, model_name: str, embedding_model_name: str, reason: str):
+        self.model_name = model_name
+        self.embedding_model_name = embedding_model_name
+        self.reason = reason
+
+    def score_cases(self, cases):
+        from server.app.evaluation.external_evaluators import ExternalEvaluatorUnavailableError
+
+        raise ExternalEvaluatorUnavailableError(self.reason)
 
 
 class _StubTrainingBackend:

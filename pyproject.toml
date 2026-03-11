@@ -16,6 +16,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+evaluation = [
+  "datasets>=2.18,<4.0",
+  "langchain-openai>=0.1,<1.0",
+  "ragas>=0.1,<1.0",
+]
 rerank = [
   "torch>=2.2,<3.0",
   "transformers>=4.40,<5.0",

@@ -80,7 +80,7 @@
   - repo-file golden set loader
   - frozen replay eval
   - hard metrics
-  - `real` profile 下的 OpenAI-compatible RAGAS / judge external evaluators
+  - `real` profile 下的真实 RAGAS backend 结构 + OpenAI judge external evaluator
   - manual rubric storage + API + aggregated eval results
   - partial-result handling
 - SFT 已支持：
@@ -107,6 +107,7 @@
   - Playwright 浏览器级端到端回归已接入
 - 当前剩余主要是环境与文档层面的持续维护：
   - 默认开发环境仍未预装 `.[rerank]`
+  - 默认开发环境仍未预装 `.[evaluation]`
   - 默认开发环境仍未预装 `.[training]` 与 adapter inference 依赖
   - `FACTS.md` / `IMPLEMENTATION_STATUS.md` / `to_do.md` 仍需随实现持续同步
 
@@ -122,6 +123,8 @@
   - `bitsandbytes` 仅在需要 4-bit QLoRA 时额外安装
 - 真实 HF cross-encoder rerank 依赖当前默认开发环境未内置：
   - 需要额外安装 `.[rerank]`（`torch`、`transformers`）
+- 真实 RAGAS backend 依赖当前默认开发环境未内置：
+  - 需要额外安装 `.[evaluation]`（`ragas`、`datasets`、`langchain-openai`）
 
 ## Planning Implication
 - 该仓库已不再是 greenfield / spec-only 状态。

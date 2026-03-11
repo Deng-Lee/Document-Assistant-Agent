@@ -30,7 +30,7 @@ from .external_evaluators import (
     ExternalEvaluatorSchemaError,
     ExternalEvaluatorUnavailableError,
     OpenAIExternalJudgeEvaluator,
-    OpenAIExternalRagasEvaluator,
+    RagasExternalEvaluator,
 )
 from .loader import load_golden_cases
 from .metrics import compute_eval_metrics
@@ -46,7 +46,7 @@ class EvaluationService:
         ragas_runner: Callable[[list[GoldenCase], list[TraceRecord]], EvalStageResult] | None = None,
         judge_runner: Callable[[list[GoldenCase], list[TraceRecord]], EvalStageResult] | None = None,
         runtime_config: RuntimeConfigSnapshot | None = None,
-        ragas_evaluator: OpenAIExternalRagasEvaluator | None = None,
+        ragas_evaluator: RagasExternalEvaluator | None = None,
         judge_evaluator: OpenAIExternalJudgeEvaluator | None = None,
     ):
         self.trace_store = trace_store
@@ -54,7 +54,7 @@ class EvaluationService:
         self.repo_root = Path(repo_root).resolve() if repo_root is not None else None
         self.replay_runner = replay_runner
         self.runtime_config = runtime_config or build_runtime_config()
-        self.ragas_evaluator = ragas_evaluator or OpenAIExternalRagasEvaluator(self.runtime_config)
+        self.ragas_evaluator = ragas_evaluator or RagasExternalEvaluator(self.runtime_config)
         self.judge_evaluator = judge_evaluator or OpenAIExternalJudgeEvaluator(self.runtime_config)
         self.ragas_runner = ragas_runner or self._run_ragas
         self.judge_runner = judge_runner or self._run_judge
@@ -162,7 +162,7 @@ class EvaluationService:
         if profile != "real":
             return EvalStageResult(
                 status=EvalStageStatus.SKIPPED,
-                evaluator="surrogate_ragas_v1",
+                evaluator=self.ragas_evaluator.evaluator_name,
                 reason="not_enabled_for_profile",
                 sample_count=len(traces),
             )
@@ -292,7 +292,8 @@ def _provider_status(runtime_config: RuntimeConfigSnapshot, evaluator: object) -
         "profile_name": runtime_config.model_routing.profile_name,
         "evaluator_name": getattr(evaluator, "evaluator_name", evaluator.__class__.__name__),
         "configured": bool(getattr(evaluator, "is_ready", False)),
-        "base_url": getattr(transport, "base_url", None),
+        "base_url": getattr(transport, "base_url", None) or getattr(evaluator, "base_url", None),
+        "missing_dependencies": list(getattr(evaluator, "missing_dependencies", [])),
     }
 
 
