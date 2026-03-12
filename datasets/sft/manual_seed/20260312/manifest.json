@@ -1,0 +1,10 @@
+{
+  "dataset_name": "manual_seed",
+  "dataset_version": "20260312",
+  "created_from": "test/fixtures",
+  "include_notes": false,
+  "sample_count": 7,
+  "bjj_sample_count": 7,
+  "notes_sample_count": 0,
+  "train_path": "datasets/sft/manual_seed/20260312/train.jsonl"
+}

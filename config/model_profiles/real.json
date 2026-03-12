@@ -1,7 +1,7 @@
 {
   "name": "real",
   "provider": "openai",
-  "base_model": "gpt-4.1-mini",
+  "base_model": "Qwen/Qwen2.5-7B-Instruct",
   "policy_model": "policy://pending",
   "embedding_model": "text-embedding-3-large",
   "embedding_version_id": "text-embedding-3-large:default",

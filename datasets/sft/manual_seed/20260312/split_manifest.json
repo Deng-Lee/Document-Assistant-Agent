@@ -1,0 +1,27 @@
+{
+  "dataset_name": "bjj_seed_plus_edges",
+  "base_sample_count": 300,
+  "edge_sample_count": 60,
+  "combined_sample_count": 360,
+  "train_sample_count": 324,
+  "val_sample_count": 36,
+  "train_mode_counts": {
+    "AMBIGUOUS_FINAL": 27,
+    "FULL": 270,
+    "LOW_EVIDENCE": 27
+  },
+  "val_mode_counts": {
+    "AMBIGUOUS_FINAL": 3,
+    "FULL": 30,
+    "LOW_EVIDENCE": 3
+  },
+  "edge_mode_counts": {
+    "AMBIGUOUS_FINAL": 30,
+    "LOW_EVIDENCE": 30
+  },
+  "source_path": "datasets/sft/manual_seed/20260312/bjj_train_300.jsonl",
+  "edge_path": "datasets/sft/manual_seed/20260312/bjj_edge_cases_60.jsonl",
+  "combined_path": "datasets/sft/manual_seed/20260312/bjj_train_360.jsonl",
+  "train_path": "datasets/sft/manual_seed/20260312/train.jsonl",
+  "val_path": "datasets/sft/manual_seed/20260312/val.jsonl"
+}
