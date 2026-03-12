@@ -71,6 +71,14 @@ class HFLoRAQLoRATrainingBackend:
             str(request.lora_alpha),
             "--lora_dropout",
             str(request.lora_dropout),
+            "--validation_split",
+            str(request.validation_split),
+            "--eval_steps",
+            str(request.eval_steps),
+            "--early_stopping_patience",
+            str(request.early_stopping_patience),
+            "--early_stopping_threshold",
+            str(request.early_stopping_threshold),
         ]
         if request.lora_targets:
             command.extend(["--lora_targets", ",".join(request.lora_targets)])
@@ -105,6 +113,10 @@ class HFLoRAQLoRATrainingBackend:
                 "python_executable": self.python_executable,
                 "load_in_4bit": request.load_in_4bit,
                 "lora_targets": list(request.lora_targets),
+                "validation_split": request.validation_split,
+                "eval_steps": request.eval_steps,
+                "early_stopping_patience": request.early_stopping_patience,
+                "early_stopping_threshold": request.early_stopping_threshold,
             },
         )
 

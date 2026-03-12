@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from pathlib import Path
+import random
 import sys
 from typing import Any
 
@@ -32,6 +34,56 @@ def _build_example(row: dict[str, Any]) -> tuple[str, str]:
     return prompt, assistant
 
 
+def _split_examples(
+    prompts: list[str],
+    completions: list[str],
+    validation_split: float,
+    seed: int = 42,
+) -> tuple[dict[str, list[str]], dict[str, list[str]] | None]:
+    if len(prompts) != len(completions):
+        raise ValueError("prompt/completion length mismatch")
+    row_count = len(prompts)
+    train_payload = {"prompt": prompts, "completion": completions}
+    if row_count < 2 or validation_split <= 0.0:
+        return train_payload, None
+    validation_count = int(round(row_count * validation_split))
+    validation_count = max(1, validation_count)
+    validation_count = min(validation_count, row_count - 1)
+    indices = list(range(row_count))
+    random.Random(seed).shuffle(indices)
+    validation_indices = set(indices[:validation_count])
+    train_prompts: list[str] = []
+    train_completions: list[str] = []
+    eval_prompts: list[str] = []
+    eval_completions: list[str] = []
+    for index, (prompt, completion) in enumerate(zip(prompts, completions)):
+        if index in validation_indices:
+            eval_prompts.append(prompt)
+            eval_completions.append(completion)
+        else:
+            train_prompts.append(prompt)
+            train_completions.append(completion)
+    return (
+        {"prompt": train_prompts, "completion": train_completions},
+        {"prompt": eval_prompts, "completion": eval_completions},
+    )
+
+
+def _extract_loss_history(log_history: list[dict[str, Any]], loss_key: str) -> list[dict[str, float]]:
+    curve: list[dict[str, float]] = []
+    for item in log_history:
+        if loss_key not in item:
+            continue
+        curve.append(
+            {
+                "step": float(item.get("step", 0)),
+                "epoch": float(item.get("epoch", 0.0)),
+                loss_key: float(item[loss_key]),
+            }
+        )
+    return curve
+
+
 def train(
     train_path: Path,
     base_model: str,
@@ -44,6 +96,10 @@ def train(
     lora_alpha: int,
     lora_dropout: float,
     lora_targets: list[str] | None,
+    validation_split: float,
+    eval_steps: int,
+    early_stopping_patience: int,
+    early_stopping_threshold: float,
     load_in_4bit: bool,
 ) -> None:
     try:
@@ -54,6 +110,7 @@ def train(
             AutoModelForCausalLM,
             AutoTokenizer,
             DataCollatorForLanguageModeling,
+            EarlyStoppingCallback,
             Trainer,
             TrainingArguments,
         )
@@ -74,7 +131,9 @@ def train(
         prompt, completion = _build_example(row)
         prompts.append(prompt)
         completions.append(completion)
-    dataset = Dataset.from_dict({"prompt": prompts, "completion": completions})
+    train_payload, eval_payload = _split_examples(prompts, completions, validation_split=validation_split)
+    dataset = Dataset.from_dict(train_payload)
+    eval_dataset = Dataset.from_dict(eval_payload) if eval_payload is not None else None
 
     tokenizer = AutoTokenizer.from_pretrained(base_model, use_fast=True)
     if tokenizer.pad_token is None:
@@ -123,34 +182,79 @@ def train(
         return {"input_ids": input_ids, "labels": labels, "attention_mask": attention_mask}
 
     tokenized = dataset.map(tokenize, batched=True, remove_columns=dataset.column_names)
+    tokenized_eval = (
+        eval_dataset.map(tokenize, batched=True, remove_columns=eval_dataset.column_names)
+        if eval_dataset is not None
+        else None
+    )
     out_dir.mkdir(parents=True, exist_ok=True)
+    evaluation_enabled = tokenized_eval is not None and len(tokenized_eval) > 0
+    training_args_kwargs: dict[str, Any] = {
+        "output_dir": str(out_dir),
+        "per_device_train_batch_size": batch_size,
+        "per_device_eval_batch_size": batch_size,
+        "num_train_epochs": epochs,
+        "learning_rate": lr,
+        "logging_steps": 1,
+        "save_total_limit": 2,
+        "report_to": [],
+        "fp16": torch.cuda.is_available() and not load_in_4bit,
+        "evaluation_strategy": "steps" if evaluation_enabled else "no",
+        "save_strategy": "steps" if evaluation_enabled else "epoch",
+        "load_best_model_at_end": evaluation_enabled,
+    }
+    if evaluation_enabled:
+        training_args_kwargs.update(
+            {
+                "eval_steps": eval_steps,
+                "save_steps": eval_steps,
+                "metric_for_best_model": "eval_loss",
+                "greater_is_better": False,
+            }
+        )
+    training_args = TrainingArguments(**training_args_kwargs)
+    callbacks = []
+    if evaluation_enabled and early_stopping_patience > 0:
+        callbacks.append(
+            EarlyStoppingCallback(
+                early_stopping_patience=early_stopping_patience,
+                early_stopping_threshold=early_stopping_threshold,
+            )
+        )
     trainer = Trainer(
         model=model,
-        args=TrainingArguments(
-            output_dir=str(out_dir),
-            per_device_train_batch_size=batch_size,
-            num_train_epochs=epochs,
-            learning_rate=lr,
-            logging_steps=10,
-            save_steps=200,
-            save_total_limit=2,
-            report_to=[],
-            fp16=torch.cuda.is_available() and not load_in_4bit,
-        ),
+        args=training_args,
         train_dataset=tokenized,
+        eval_dataset=tokenized_eval,
         data_collator=DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False),
+        callbacks=callbacks,
     )
-    trainer.train()
+    train_result = trainer.train()
     adapter_dir = out_dir / "adapter"
     tokenizer_dir = out_dir / "tokenizer"
     model.save_pretrained(str(adapter_dir))
     tokenizer.save_pretrained(str(tokenizer_dir))
+    best_eval_loss = (
+        float(trainer.state.best_metric)
+        if evaluation_enabled and trainer.state.best_metric is not None
+        else None
+    )
+    expected_train_steps = math.ceil(max(len(tokenized), 1) / batch_size) * epochs
+    stopped_early = bool(
+        evaluation_enabled
+        and early_stopping_patience > 0
+        and trainer.state.global_step < expected_train_steps
+    )
+    log_history = trainer.state.log_history
     (out_dir / "training_summary.json").write_text(
         json.dumps(
             {
                 "backend_name": "hf_lora_qlora_v1",
                 "base_model": base_model,
                 "row_count": len(rows),
+                "train_row_count": len(train_payload["prompt"]),
+                "validation_row_count": len(eval_payload["prompt"]) if eval_payload is not None else 0,
+                "evaluation_enabled": evaluation_enabled,
                 "epochs": epochs,
                 "learning_rate": lr,
                 "batch_size": batch_size,
@@ -159,6 +263,18 @@ def train(
                 "lora_alpha": lora_alpha,
                 "lora_dropout": lora_dropout,
                 "lora_targets": lora_targets,
+                "validation_split": validation_split,
+                "eval_steps": eval_steps,
+                "early_stopping_patience": early_stopping_patience,
+                "early_stopping_threshold": early_stopping_threshold,
+                "best_eval_loss": best_eval_loss,
+                "best_model_checkpoint": trainer.state.best_model_checkpoint,
+                "stopped_early": stopped_early,
+                "global_step": trainer.state.global_step,
+                "expected_train_steps": expected_train_steps,
+                "training_loss": float(train_result.training_loss),
+                "train_loss_curve": _extract_loss_history(log_history, "loss"),
+                "eval_loss_curve": _extract_loss_history(log_history, "eval_loss"),
                 "load_in_4bit": load_in_4bit,
                 "adapter_path": str(adapter_dir),
                 "tokenizer_path": str(tokenizer_dir),
@@ -184,6 +300,10 @@ def main() -> None:
     parser.add_argument("--lora_alpha", type=int, default=32)
     parser.add_argument("--lora_dropout", type=float, default=0.05)
     parser.add_argument("--lora_targets", default="")
+    parser.add_argument("--validation_split", type=float, default=0.1)
+    parser.add_argument("--eval_steps", type=int, default=10)
+    parser.add_argument("--early_stopping_patience", type=int, default=2)
+    parser.add_argument("--early_stopping_threshold", type=float, default=0.0)
     parser.add_argument("--load_in_4bit", action="store_true")
     args = parser.parse_args()
 
@@ -200,6 +320,10 @@ def main() -> None:
         lora_alpha=args.lora_alpha,
         lora_dropout=args.lora_dropout,
         lora_targets=lora_targets or None,
+        validation_split=args.validation_split,
+        eval_steps=args.eval_steps,
+        early_stopping_patience=args.early_stopping_patience,
+        early_stopping_threshold=args.early_stopping_threshold,
         load_in_4bit=args.load_in_4bit,
     )
 

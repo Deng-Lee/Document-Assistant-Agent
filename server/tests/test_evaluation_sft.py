@@ -4,6 +4,7 @@ import json
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from server.tests.support import activate_test_profile, make_trace_record
 
@@ -629,6 +630,10 @@ class EvaluationAndSFTTests(unittest.TestCase):
                     train_path=str(train_path),
                     output_path=str(Path(tmp) / "policy_ckpt"),
                     base_model=runtime_config.model_routing.base_model,
+                    validation_split=0.25,
+                    eval_steps=4,
+                    early_stopping_patience=2,
+                    early_stopping_threshold=0.01,
                     dry_run=False,
                     activate=True,
                 ),
@@ -641,6 +646,10 @@ class EvaluationAndSFTTests(unittest.TestCase):
             self.assertEqual(checkpoint.training_backend, "hf_lora_qlora_v1")
             artifact = json.loads((policy_dir / "policy_artifact.json").read_text(encoding="utf-8"))
             self.assertEqual(artifact["schema_version"], "hf_lora_qlora_v1")
+            self.assertEqual(artifact["training_config"]["validation_split"], 0.25)
+            self.assertEqual(artifact["training_config"]["eval_steps"], 4)
+            self.assertEqual(artifact["training_config"]["early_stopping_patience"], 2)
+            self.assertEqual(artifact["training_config"]["early_stopping_threshold"], 0.01)
             self.assertTrue((policy_dir / "adapter").exists())
             self.assertTrue((policy_dir / "tokenizer").exists())
             self.assertEqual(service.training_backend_status()["backend_name"], "hf_lora_qlora_v1")
@@ -680,6 +689,59 @@ class EvaluationAndSFTTests(unittest.TestCase):
             self.assertNotEqual(policy_trace.trace_id, "trace_policy")
             self.assertEqual(policy_trace.generation_log.model, checkpoint.policy_model_ref)
             self.assertIn("policy tuned", policy_trace.generation_log.output["observations"][0]["text"])
+
+    def test_training_backend_passes_validation_and_early_stopping_flags_to_script(self) -> None:
+        with TemporaryDirectory() as tmp:
+            from server.app.core import PolicyTrainRequest
+            from server.app.sft.training_backend import HFLoRAQLoRATrainingBackend
+
+            train_path = Path(tmp) / "train.jsonl"
+            train_path.write_text('{"input":{"task":"COACH_BJJ"},"target_output":{"mode":"FULL"}}\n', encoding="utf-8")
+            output_dir = Path(tmp) / "policy_ckpt"
+            script_path = Path(tmp) / "train_policy_lora.py"
+            script_path.write_text("# stub\n", encoding="utf-8")
+
+            def _fake_run(command, cwd, capture_output, text, check):
+                self.assertIn("--validation_split", command)
+                self.assertIn("--eval_steps", command)
+                self.assertIn("--early_stopping_patience", command)
+                self.assertIn("--early_stopping_threshold", command)
+                self.assertEqual(command[command.index("--validation_split") + 1], "0.2")
+                self.assertEqual(command[command.index("--eval_steps") + 1], "7")
+                self.assertEqual(command[command.index("--early_stopping_patience") + 1], "3")
+                self.assertEqual(command[command.index("--early_stopping_threshold") + 1], "0.02")
+                adapter_dir = output_dir / "adapter"
+                tokenizer_dir = output_dir / "tokenizer"
+                adapter_dir.mkdir(parents=True, exist_ok=True)
+                tokenizer_dir.mkdir(parents=True, exist_ok=True)
+                (output_dir / "training_summary.json").write_text('{"ok":true}\n', encoding="utf-8")
+
+                class _Completed:
+                    returncode = 0
+                    stderr = ""
+                    stdout = ""
+
+                return _Completed()
+
+            backend = HFLoRAQLoRATrainingBackend(script_path=script_path)
+            request = PolicyTrainRequest(
+                train_path=str(train_path),
+                output_path=str(output_dir),
+                base_model="Qwen/Qwen2.5-7B-Instruct",
+                validation_split=0.2,
+                eval_steps=7,
+                early_stopping_patience=3,
+                early_stopping_threshold=0.02,
+                dry_run=False,
+            )
+            with patch("server.app.sft.training_backend.subprocess.run", side_effect=_fake_run):
+                artifact = backend.run(request)
+
+            self.assertTrue(artifact.adapter_path.endswith("/adapter"))
+            self.assertEqual(artifact.metadata["validation_split"], 0.2)
+            self.assertEqual(artifact.metadata["eval_steps"], 7)
+            self.assertEqual(artifact.metadata["early_stopping_patience"], 3)
+            self.assertEqual(artifact.metadata["early_stopping_threshold"], 0.02)
 
 
 def _build_eval_stack(root: str):
@@ -795,6 +857,10 @@ class _StubTrainingBackend:
                     "backend_name": self.backend_name,
                     "base_model": request.base_model,
                     "load_in_4bit": request.load_in_4bit,
+                    "validation_split": request.validation_split,
+                    "eval_steps": request.eval_steps,
+                    "early_stopping_patience": request.early_stopping_patience,
+                    "early_stopping_threshold": request.early_stopping_threshold,
                 },
                 ensure_ascii=False,
                 indent=2,

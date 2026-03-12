@@ -65,6 +65,10 @@ class PolicyTrainRequest(PDABaseModel):
     lora_alpha: int = Field(default=32, ge=1)
     lora_dropout: float = Field(default=0.05, ge=0.0, le=1.0)
     lora_targets: list[str] = Field(default_factory=list)
+    validation_split: float = Field(default=0.1, ge=0.0, lt=1.0)
+    eval_steps: int = Field(default=10, ge=1)
+    early_stopping_patience: int = Field(default=2, ge=0)
+    early_stopping_threshold: float = Field(default=0.0, ge=0.0)
     load_in_4bit: bool = False
     dry_run: bool = True
     activate: bool = True
