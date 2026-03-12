@@ -111,9 +111,9 @@
   - 前后端契约同步已生成并纳入测试
   - chat SSE/streaming 已接通
   - Playwright 浏览器级端到端回归已接入
-- 当前剩余主要是环境与文档层面的持续维护：
-  - 默认开发环境仍未预装 `.[training]` 与 adapter inference 依赖
+- 当前剩余主要是文档与前端基线的持续维护：
   - `FACTS.md` / `IMPLEMENTATION_STATUS.md` / `to_do.md` 仍需随实现持续同步
+  - 前端仍未严格对齐 `DEV_SPEC.md` 点名的 Tailwind + shadcn/ui 方案
 
 ## Runtime Constraints Discovered
 - Python 运行环境可用，`chromadb` 当前环境中可导入并用于本地 persistent store。
@@ -122,8 +122,8 @@
 - Chroma 在当前环境下可工作，但其上游依赖会抛出非阻塞性 warning：
   - `read_write_lock.py` 的 `notifyAll()` deprecation warning
 - 为兼容 `numpy 2.x`，向量适配层里保留了 `np.NaN` 兼容补丁。
-- 真实 LoRA/QLoRA 训练依赖当前默认开发环境未内置：
-  - 需要额外安装 `.[training]`（`torch`、`transformers`、`peft`、`accelerate`、`datasets`）
+- 真实 LoRA/QLoRA 训练依赖已纳入当前默认开发环境：
+  - 默认开发环境已包含 `torch`、`transformers`、`peft`、`accelerate`、`datasets`
   - `bitsandbytes` 仅在需要 4-bit QLoRA 时额外安装
 - 真实 HF cross-encoder rerank 运行时依赖已纳入默认开发环境清单：
   - `torch`

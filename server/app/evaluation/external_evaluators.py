@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 from collections import Counter
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Protocol
 
-from pydantic import Field, ValidationError, root_validator, validator
+from pydantic import Field, ValidationError, field_validator, model_validator
 
 from server.app.core import (
     EvalMetricName,
@@ -54,19 +54,19 @@ class JudgeCaseScore(PDABaseModel):
     error_tags: list[str] = Field(default_factory=list)
     notes: str | None = None
 
-    @validator("error_tags", each_item=True)
-    def _validate_error_tags(cls, value: str) -> str:
-        if value not in ALLOWED_JUDGE_ERROR_TAGS:
-            raise ValueError(f"invalid_error_tag:{value}")
-        return value
-
-    @root_validator
-    def _normalize_score(cls, values: dict[str, Any]) -> dict[str, Any]:
-        score = values.get("score")
-        rubric_score = values.get("rubric_score")
-        if score is None and rubric_score is not None:
-            values["score"] = round(float(rubric_score) / 5.0, 4)
+    @field_validator("error_tags")
+    @classmethod
+    def _validate_error_tags(cls, values: list[str]) -> list[str]:
+        for value in values:
+            if value not in ALLOWED_JUDGE_ERROR_TAGS:
+                raise ValueError(f"invalid_error_tag:{value}")
         return values
+
+    @model_validator(mode="after")
+    def _normalize_score(self) -> "JudgeCaseScore":
+        if self.score is None:
+            self.score = round(float(self.rubric_score) / 5.0, 4)
+        return self
 
 
 @dataclass

@@ -77,11 +77,10 @@ def main() -> None:
             retrieval_status = real_state.retrieval_service.provider_status()
             assert retrieval_status["profile_name"] == "real"
             assert retrieval_status["provider_name"] == "HFCrossEncoderReranker"
-            assert retrieval_status["configured"] is False
+            assert retrieval_status["configured"] is True
             assert retrieval_status["model"] == "BAAI/bge-reranker-base"
             assert retrieval_status["base_url"] is None
-            assert "torch" in retrieval_status["missing_dependencies"]
-            assert "transformers" in retrieval_status["missing_dependencies"]
+            assert retrieval_status["missing_dependencies"] == []
             print("real_retrieval_reranker_smoke_ok")
             replan_status = real_state.orchestrator_service.replanner.provider_status()
             assert replan_status["profile_name"] == "real"
@@ -92,9 +91,9 @@ def main() -> None:
             evaluation_status = real_state.evaluation_service.provider_status()
             assert evaluation_status["ragas"]["profile_name"] == "real"
             assert evaluation_status["ragas"]["evaluator_name"] == "ragas_external_v1"
-            assert evaluation_status["ragas"]["configured"] is False
+            assert evaluation_status["ragas"]["configured"] is True
             assert evaluation_status["ragas"]["base_url"] == "https://smoke.example.invalid/v1"
-            assert "ragas" in evaluation_status["ragas"]["missing_dependencies"]
+            assert evaluation_status["ragas"]["missing_dependencies"] == []
             assert evaluation_status["judge"]["profile_name"] == "real"
             assert evaluation_status["judge"]["evaluator_name"] == "openai_judge_v1"
             assert evaluation_status["judge"]["configured"] is True

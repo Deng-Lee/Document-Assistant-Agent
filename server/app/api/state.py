@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from uuid import uuid4
 
-from pydantic import Field
+from pydantic import ConfigDict, Field
 
 from server.app.agents import BJJCoachService, LiteraryService
 from server.app.core import (
@@ -59,8 +59,7 @@ class AppState(PDABaseModel):
     current_profile: ProfileSummary
     conversations: dict[str, StoredConversation] = Field(default_factory=dict)
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     def get_or_create_conversation(self, conversation_id: str | None = None) -> StoredConversation:
         if conversation_id and conversation_id in self.conversations:

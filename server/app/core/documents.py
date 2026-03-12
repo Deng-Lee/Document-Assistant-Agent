@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date as CalendarDate
+from datetime import datetime as DateTime
 
 from pydantic import Field
 
@@ -10,7 +11,7 @@ from .locators import SourceLocator
 
 
 class BJJRecordFields(PDABaseModel):
-    date: date
+    date: CalendarDate
     position: str
     orientation: Orientation
     distance: Distance
@@ -23,7 +24,7 @@ class BJJRecordFields(PDABaseModel):
 
 
 class ChunkMetadataDigest(PDABaseModel):
-    date: date | None = None
+    date: CalendarDate | None = None
     position: str | None = None
     orientation: Orientation | None = None
     distance: Distance | None = None
@@ -37,8 +38,8 @@ class DocumentRecord(PDABaseModel):
     doc_type: DocumentType
     title: str
     latest_version_id: str | None = None
-    created_at: datetime
-    updated_at: datetime
+    created_at: DateTime
+    updated_at: DateTime
     status: str = "active"
 
 
@@ -46,7 +47,7 @@ class DocVersionRecord(PDABaseModel):
     doc_version_id: str
     doc_id: str
     content_hash: str
-    ingest_time: datetime
+    ingest_time: DateTime
     source_path: str | None = None
     size_bytes: int | None = Field(default=None, ge=0)
 
@@ -65,9 +66,9 @@ class ChunkRecord(PDABaseModel):
     summary_status: SummaryStatus = SummaryStatus.PENDING
     summary_error_code: str | None = None
     summary_retry_count: int = Field(default=0, ge=0)
-    summary_last_attempt_at: datetime | None = None
-    summary_next_retry_at: datetime | None = None
-    summary_last_error_at: datetime | None = None
+    summary_last_attempt_at: DateTime | None = None
+    summary_next_retry_at: DateTime | None = None
+    summary_last_error_at: DateTime | None = None
     clean_search_text: str | None = None
     clean_embed_text: str | None = None
     raw_text_ref: str | None = None

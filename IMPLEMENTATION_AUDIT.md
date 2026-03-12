@@ -43,7 +43,7 @@
 | RAGAS evaluator | `done` | `real` profile 主路径现已切到真实 RAGAS backend 结构，并按 spec 为 NOTES 优先构造 `top-1 raw_excerpt / top-2/3 safe_summary` contexts；`datasets/langchain-openai/ragas` 也已纳入默认开发环境依赖，不再把真实 RAGAS 主路径压成 `.[evaluation]` 可选安装。现有本地解释器如未重装依赖仍需执行环境同步，但这已不再是 repo manifest 层面的缺口。 | [DEV_SPEC.md](/Users/lee/Documents/AI/Document%20Assistant%20Agent/DEV_SPEC.md#L2230), [server/app/evaluation/external_evaluators.py](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/app/evaluation/external_evaluators.py), [pyproject.toml](/Users/lee/Documents/AI/Document%20Assistant%20Agent/pyproject.toml), [server/tests/test_project_metadata.py](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/tests/test_project_metadata.py) |
 | LLM-as-judge | `done` | judge 现已按 spec 采用固定模型/固定 prompt 版本、结构化 `rubric_score + error_tags` 输出，并在执行前做分层抽样，优先覆盖 validator fail、`AMBIGUOUS_FINAL` 边界态和高频 position；聚合结果中也会返回 strata/tag 统计与 sampled case 明细。 | [DEV_SPEC.md](/Users/lee/Documents/AI/Document%20Assistant%20Agent/DEV_SPEC.md#L2267), [server/app/evaluation/external_evaluators.py](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/app/evaluation/external_evaluators.py), [server/tests/test_evaluation_sft.py](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/tests/test_evaluation_sft.py) |
 | SFT export / training / policy replay | `done` | 主训练、注册、激活、policy replay/eval 已接通。 | [server/app/sft/service.py](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/app/sft/service.py) |
-| SFT readiness in default dev env | `partial` | 代码路径已具备，但默认开发环境依赖未就绪，这仍是环境层面的未收口。 | [FACTS.md](/Users/lee/Documents/AI/Document%20Assistant%20Agent/FACTS.md), [server/app/api/__main__.py](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/app/api/__main__.py) |
+| SFT readiness in default dev env | `done` | 默认开发环境依赖已直接包含 SFT training 与 adapter inference 主链路运行时；`--check` 能在默认解释器里报告 training/inference backend 为可用。 | [pyproject.toml](/Users/lee/Documents/AI/Document%20Assistant%20Agent/pyproject.toml), [server/app/api/__main__.py](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/app/api/__main__.py), [server/tests/test_project_metadata.py](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/tests/test_project_metadata.py) |
 | Profile persistence and history | `done` | 持久化、启动恢复、history API 已接通。 | [server/app/api/app.py](/Users/lee/Documents/AI/Document%20Assistant%20Agent/server/app/api/app.py#L337) |
 | Web frontend baseline | `partial` | Next.js、SSE、contract sync、component test、Playwright 已有；但 spec 点名的 Tailwind + shadcn/ui 当前并未接入，不能说完全等价于原方案。 | [DEV_SPEC.md](/Users/lee/Documents/AI/Document%20Assistant%20Agent/DEV_SPEC.md#L64), [web/package.json](/Users/lee/Documents/AI/Document%20Assistant%20Agent/web/package.json#L1) |
 | Canonical plan doc baseline accuracy | `done` | `IMPLEMENTATION_PLAN.md` 的 current baseline 已改写为当前真实仓库状态，不再把 repo 误写成 `spec-only`。 | [IMPLEMENTATION_PLAN.md](/Users/lee/Documents/AI/Document%20Assistant%20Agent/IMPLEMENTATION_PLAN.md#L11) |
@@ -65,9 +65,7 @@
 
 以下内容仍未达到 `DEV_SPEC.md` 与 `IMPLEMENTATION_PLAN.md` 要求的完全收口标准，后续必须继续按原方案补齐：
 
-1. SFT readiness in default dev env
-   SFT 主链路代码已完成，但默认开发环境未装 `.[training]` 与 adapter inference 依赖；环境 readiness 仍未收口。
-2. Web frontend baseline
+1. Web frontend baseline
    Next.js 主链路已完成，但 `DEV_SPEC.md` 点名的 Tailwind + shadcn/ui 方案仍未严格对齐，不能把当前前端形态视为和原方案完全一致。
 
 ## Implementation Discipline For Next Steps

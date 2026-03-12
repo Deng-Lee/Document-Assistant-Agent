@@ -9,10 +9,12 @@ description = "Personal Document Assistant Agent backend and local web shell."
 readme = "DEV_SPEC.md"
 requires-python = ">=3.11"
 dependencies = [
+  "accelerate>=0.28,<2.0",
   "chromadb>=0.4.24,<1.0",
   "datasets>=2.18,<4.0",
   "fastapi>=0.110,<1.0",
   "langchain-openai>=0.1,<1.0",
+  "peft>=0.10,<1.0",
   "pydantic>=1.10,<3.0",
   "ragas>=0.1,<1.0",
   "torch>=2.2,<3.0",
@@ -24,8 +26,6 @@ dependencies = [
 evaluation = []
 rerank = []
 training = [
-  "accelerate>=0.28,<2.0",
-  "peft>=0.10,<1.0",
 ]
 
 [project.scripts]

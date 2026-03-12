@@ -27,9 +27,8 @@
 
 ## Highest-Priority Remaining Work
 
-1. 在默认开发环境补齐 `.[training]` 与 adapter inference 依赖，把 SFT readiness 从环境层面的 `False` 收敛到 `True`。
-2. 继续收口审计清单里剩余的 `partial` 项。
-3. 继续随代码变更维护 `FACTS.md`、`IMPLEMENTATION_STATUS.md` 和 `to_do.md`，避免文档基线再次漂移。
+1. 继续收口审计清单里剩余的 `partial` 项。
+2. 继续随代码变更维护 `FACTS.md`、`IMPLEMENTATION_STATUS.md` 和 `to_do.md`，避免文档基线再次漂移。
 
 ## Notes
 

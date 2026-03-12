@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Protocol
+from typing import Protocol
 
-from pydantic import Field, ValidationError, root_validator
+from pydantic import Field, ValidationError, model_validator
 
 from server.app.core import (
     ClarifySlot,
@@ -57,16 +57,15 @@ class LLMReplanOutput(PDABaseModel):
     clarify_options: list[str] = Field(default_factory=list)
     reason_codes: list[str] = Field(default_factory=list)
 
-    @root_validator
-    def _validate_shape(cls, values: dict[str, Any]) -> dict[str, Any]:
-        next_action = values.get("next_action")
-        if next_action == NextAction.WRITE_FLOW:
+    @model_validator(mode="after")
+    def _validate_shape(self) -> "LLMReplanOutput":
+        if self.next_action == NextAction.WRITE_FLOW:
             raise ValueError("replan cannot emit WRITE_FLOW")
-        if next_action == NextAction.RETRIEVE and not (values.get("query_text") or "").strip():
+        if self.next_action == NextAction.RETRIEVE and not (self.query_text or "").strip():
             raise ValueError("RETRIEVE replan output requires query_text")
-        if next_action == NextAction.CLARIFY and values.get("clarify_slot") is None:
+        if self.next_action == NextAction.CLARIFY and self.clarify_slot is None:
             raise ValueError("CLARIFY replan output requires clarify_slot")
-        return values
+        return self
 
 
 class ReplanProvider(Protocol):
