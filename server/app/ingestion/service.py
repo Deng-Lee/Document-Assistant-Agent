@@ -30,7 +30,10 @@ class IngestionService:
         self.runtime_config = runtime_config or build_runtime_config()
         self.vector_store = vector_store
         self.loader = MarkdownLoader()
-        self.parser = MarkdownParser()
+        self.parser = MarkdownParser(
+            notes_chunk_size_chars=self.runtime_config.ingestion.notes_chunk_size_chars,
+            notes_overlap_chars=self.runtime_config.ingestion.notes_overlap_chars,
+        )
 
     def ingest_file(self, path: str | Path, doc_id: str | None = None) -> IngestionResult:
         loaded = self.loader.load_file(path)

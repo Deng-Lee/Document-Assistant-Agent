@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -580,6 +581,59 @@ class EvaluationAndSFTTests(unittest.TestCase):
                 service.resolve_model_for_variant(build_runtime_config(), ModelVariant.POLICY, checkpoint),
                 checkpoint.policy_model_ref,
             )
+
+    def test_policy_train_request_defaults_to_sft_base_model_when_present(self) -> None:
+        with TemporaryDirectory() as tmp:
+            keys = ("PDA_MODEL_PROFILE", "PDA_MODEL_PROFILE_CONFIG_DIR")
+            original = {key: os.environ.get(key) for key in keys}
+            try:
+                for key in keys:
+                    os.environ.pop(key, None)
+                config_dir = Path(tmp) / "profile_configs"
+                config_dir.mkdir(parents=True)
+                (config_dir / "real.json").write_text(
+                    json.dumps(
+                        {
+                            "name": "real",
+                            "provider": "openai",
+                            "base_model": "Qwen3.5-turbo",
+                            "sft_base_model": "Qwen/Qwen2.5-7B-Instruct",
+                            "policy_model": "policy://pending",
+                            "embedding_model": "text-embedding-v4",
+                            "embedding_version_id": "text-embedding-v4:qwen",
+                            "generation": {
+                                "bjj": {"temperature": 0.2, "top_p": 0.95, "max_tokens": 1500},
+                                "literary": {"temperature": 0.85, "top_p": 0.9, "max_tokens": 1700},
+                                "replan": {"temperature": 0.05, "top_p": 1.0, "max_tokens": 700},
+                                "safe_summary": {"temperature": 0.0, "top_p": 1.0, "max_tokens": 220},
+                            },
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+                os.environ["PDA_MODEL_PROFILE_CONFIG_DIR"] = str(config_dir)
+
+                from server.app.core import set_active_model_profile
+                from server.app.sft import SFTService
+
+                set_active_model_profile("real")
+                service = SFTService(trace_store=_build_eval_stack(tmp)[0], policy_root=f"{tmp}/policies")
+
+                request = service.build_policy_train_request(
+                    train_path=Path(tmp) / "train.jsonl",
+                    output_path=Path(tmp) / "policy_ckpt",
+                    dry_run=True,
+                )
+
+                self.assertEqual(request.base_model, "Qwen/Qwen2.5-7B-Instruct")
+            finally:
+                for key, value in original.items():
+                    if value is None:
+                        os.environ.pop(key, None)
+                    else:
+                        os.environ[key] = value
 
     def test_sft_training_registers_policy_and_replays_policy_variant(self) -> None:
         with TemporaryDirectory() as tmp:

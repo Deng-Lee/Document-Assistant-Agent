@@ -26,12 +26,19 @@ class RerankerProfileSettings(PDABaseModel):
     max_candidates: int = Field(default=24, ge=1)
 
 
+class IngestionProfileSettings(PDABaseModel):
+    notes_chunk_size_chars: int = Field(default=1200, ge=1)
+    notes_overlap_chars: int = Field(default=120, ge=0)
+
+
 class ModelProfileSettings(PDABaseModel):
     name: str
     provider: str
     base_model: str
+    sft_base_model: str | None = None
     policy_model: str
     embedding_model: str
     embedding_version_id: str
+    ingestion: IngestionProfileSettings = Field(default_factory=IngestionProfileSettings)
     generation: GenerationProfileSet = Field(default_factory=GenerationProfileSet)
     reranker: RerankerProfileSettings = Field(default_factory=RerankerProfileSettings)

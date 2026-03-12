@@ -123,7 +123,7 @@ class SFTService:
         if request.dry_run:
             raise ValueError("V1 requires a real training run; dry_run is not sufficient for policy activation")
         resolved_request = _copy_model(request)
-        resolved_request.base_model = request.base_model or build_runtime_config().model_routing.base_model
+        resolved_request.base_model = request.base_model or self._default_sft_base_model()
 
         learned_examples: dict[str, dict[str, Any]] = {}
         target_row_count = 0
@@ -143,7 +143,7 @@ class SFTService:
         training_artifact = self.training_backend.run(resolved_request)
         checkpoint = self.register_policy_checkpoint(
             output_dir=output_dir,
-            base_model=resolved_request.base_model or build_runtime_config().model_routing.base_model,
+            base_model=resolved_request.base_model or self._default_sft_base_model(),
             dataset_manifest=manifest,
             target_row_count=target_row_count,
             training_backend=training_artifact.backend_name,
@@ -220,10 +220,15 @@ class SFTService:
         return PolicyTrainRequest(
             train_path=str(Path(train_path)),
             output_path=str(Path(output_path)),
-            base_model=build_runtime_config().model_routing.base_model,
+            base_model=self._default_sft_base_model(),
             model_variant=ModelVariant.POLICY,
             dry_run=dry_run,
         )
+
+    @staticmethod
+    def _default_sft_base_model() -> str:
+        runtime = build_runtime_config()
+        return runtime.model_routing.sft_base_model or runtime.model_routing.base_model
 
     def resolve_model_for_variant(
         self,

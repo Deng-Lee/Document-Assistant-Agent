@@ -15,6 +15,10 @@ HEADING_RE = re.compile(r"^(#{1,6})\s+(.*\S)\s*$")
 
 
 class MarkdownParser:
+    def __init__(self, notes_chunk_size_chars: int = 1200, notes_overlap_chars: int = 120):
+        self.notes_chunk_size_chars = notes_chunk_size_chars
+        self.notes_overlap_chars = notes_overlap_chars
+
     def parse(self, loaded: LoadedMarkdown) -> ParsedDocument:
         doc_type = self._parse_doc_type(loaded.frontmatter)
         title = loaded.frontmatter.get("title") or self._derive_title(loaded)
@@ -29,7 +33,11 @@ class MarkdownParser:
             doc_type=doc_type,
             title=title,
             frontmatter=loaded.frontmatter,
-            notes_chunks=self._parse_notes_chunks(loaded),
+            notes_chunks=self._parse_notes_chunks(
+                loaded,
+                chunk_size_chars=self.notes_chunk_size_chars,
+                overlap_chars=self.notes_overlap_chars,
+            ),
         )
 
     @staticmethod

@@ -689,10 +689,15 @@ class _StubInferenceBackend:
                         {
                             "name": "real",
                             "provider": "openai",
-                            "base_model": "qwen-plus",
+                            "base_model": "qwen3.5-turbo",
+                            "sft_base_model": "Qwen/Qwen2.5-7B-Instruct",
                             "policy_model": "policy://pending",
                             "embedding_model": "text-embedding-v4",
                             "embedding_version_id": "text-embedding-v4:qwen",
+                            "ingestion": {
+                                "notes_chunk_size_chars": 256,
+                                "notes_overlap_chars": 32,
+                            },
                             "generation": {
                                 "bjj": {"temperature": 0.2, "top_p": 0.95, "max_tokens": 1500},
                                 "literary": {"temperature": 0.85, "top_p": 0.9, "max_tokens": 1700},
@@ -710,9 +715,12 @@ class _StubInferenceBackend:
                 from server.app.core import build_runtime_config
 
                 runtime_config = build_runtime_config("real")
-                self.assertEqual(runtime_config.model_routing.base_model, "qwen-plus")
+                self.assertEqual(runtime_config.model_routing.base_model, "qwen3.5-turbo")
+                self.assertEqual(runtime_config.model_routing.sft_base_model, "Qwen/Qwen2.5-7B-Instruct")
                 self.assertEqual(runtime_config.model_routing.embedding_model, "text-embedding-v4")
                 self.assertEqual(runtime_config.embedding_version_id, "text-embedding-v4:qwen")
+                self.assertEqual(runtime_config.ingestion.notes_chunk_size_chars, 256)
+                self.assertEqual(runtime_config.ingestion.notes_overlap_chars, 32)
                 self.assertEqual(runtime_config.generation.replan["max_tokens"], 700)
         finally:
             for key, value in original.items():

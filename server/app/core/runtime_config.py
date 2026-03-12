@@ -22,6 +22,11 @@ class RetrievalLimits(PDABaseModel):
     token_budget: int = 4000
 
 
+class IngestionConfig(PDABaseModel):
+    notes_chunk_size_chars: int = 1200
+    notes_overlap_chars: int = 120
+
+
 class RerankerConfig(PDABaseModel):
     enabled: bool = False
     provider: str = "mock"
@@ -56,6 +61,7 @@ class ModelRoutingConfig(PDABaseModel):
     profile_name: str = "fake"
     provider: str = "openai"
     base_model: str = "gpt-4.1-mini"
+    sft_base_model: str | None = None
     policy_model: str = "policy://pending"
     embedding_model: str = "text-embedding-3-large"
 
@@ -74,6 +80,7 @@ class RuntimeConfigSnapshot(PDABaseModel):
     policy_version: PolicyVersion = PolicyVersion.BASE
     profile_version_id: str | None = None
     trace_capture_level: TraceCaptureLevel = TraceCaptureLevel.MINIMAL
+    ingestion: IngestionConfig = Field(default_factory=IngestionConfig)
     retrieval: RetrievalLimits = Field(default_factory=RetrievalLimits)
     reranker: RerankerConfig = Field(default_factory=RerankerConfig)
     orchestrator: OrchestratorThresholds = Field(default_factory=OrchestratorThresholds)
@@ -85,6 +92,7 @@ def build_runtime_config(profile_name: str | None = None) -> RuntimeConfigSnapsh
     profile = get_model_profile(profile_name)
     return RuntimeConfigSnapshot(
         embedding_version_id=profile.embedding_version_id,
+        ingestion=_ingestion_config_from_profile(profile),
         reranker=_reranker_config_from_profile(profile),
         model_routing=_model_routing_from_profile(profile),
         generation=_generation_config_from_profile(profile),
@@ -96,6 +104,7 @@ def _model_routing_from_profile(profile: ModelProfileSettings) -> ModelRoutingCo
         profile_name=profile.name,
         provider=profile.provider,
         base_model=profile.base_model,
+        sft_base_model=profile.sft_base_model,
         policy_model=profile.policy_model,
         embedding_model=profile.embedding_model,
     )
@@ -109,6 +118,14 @@ def _generation_config_from_profile(profile: ModelProfileSettings) -> Generation
         literary=dump(generation.literary),
         replan=dump(generation.replan),
         safe_summary=dump(generation.safe_summary),
+    )
+
+
+def _ingestion_config_from_profile(profile: ModelProfileSettings) -> IngestionConfig:
+    ingestion = profile.ingestion
+    return IngestionConfig(
+        notes_chunk_size_chars=ingestion.notes_chunk_size_chars,
+        notes_overlap_chars=ingestion.notes_overlap_chars,
     )
 
 
